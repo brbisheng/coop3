@@ -6,7 +6,15 @@ import re
 from collections import defaultdict
 from collections.abc import Iterable
 
-from .models import PerspectiveMap, PerspectiveNote, PerspectiveRecord, QuestionCard, ReviewDecision
+from .models import (
+    AxisHierarchy,
+    PerspectiveBranch,
+    PerspectiveMap,
+    PerspectiveNote,
+    PerspectiveRecord,
+    QuestionCard,
+    ReviewDecision,
+)
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
 _STOPWORDS = {
@@ -69,10 +77,16 @@ def synthesize_map(
     compatible_pairs = _collect_relationships(kept_notes, relation_type="compatible")
     evidence_contests = _collect_evidence_contests(kept_notes, competing_pairs, compatible_pairs)
     boundary_cases = _collect_boundary_cases(kept_notes)
+    axis_hierarchies, perspective_branches = _build_hierarchy(
+        kept_notes,
+        evidence_contests,
+    )
     final_summary = _build_final_summary(
         question_card,
         kept_notes,
         merged_groups,
+        axis_hierarchies,
+        perspective_branches,
         competing_pairs,
         compatible_pairs,
         evidence_contests,
@@ -83,6 +97,8 @@ def synthesize_map(
         question_id=question_card.question_id,
         kept_notes=kept_notes,
         merged_groups=merged_groups,
+        axis_hierarchies=axis_hierarchies,
+        perspective_branches=perspective_branches,
         competing_perspectives=competing_pairs,
         compatible_perspectives=compatible_pairs,
         evidence_contests=evidence_contests,
@@ -245,10 +261,58 @@ def _collect_boundary_cases(kept_notes: list[PerspectiveNote]) -> list[str]:
     return _unique_in_order(cases)
 
 
+def _build_hierarchy(
+    kept_notes: list[PerspectiveNote],
+    evidence_contests: list[str],
+) -> tuple[list[AxisHierarchy], list[PerspectiveBranch]]:
+    notes_by_axis: dict[str, list[PerspectiveNote]] = defaultdict(list)
+    note_disputes: dict[str, list[str]] = defaultdict(list)
+
+    for note in kept_notes:
+        notes_by_axis[note.axis_id].append(note)
+
+    for contest in evidence_contests:
+        for note in kept_notes:
+            if note.note_id in contest:
+                note_disputes[note.note_id].append(contest)
+
+    axis_hierarchies: list[AxisHierarchy] = []
+    perspective_branches: list[PerspectiveBranch] = []
+
+    for axis_id, axis_notes in notes_by_axis.items():
+        ordered_notes = list(axis_notes)
+        main_note = ordered_notes[0]
+        child_note_ids = [note.note_id for note in ordered_notes[1:]]
+        axis_hierarchies.append(
+            AxisHierarchy(
+                axis_id=axis_id,
+                main_note_id=main_note.note_id,
+                sub_perspective_ids=child_note_ids,
+            )
+        )
+
+        for index, note in enumerate(ordered_notes):
+            perspective_branches.append(
+                PerspectiveBranch(
+                    note_id=note.note_id,
+                    axis_id=axis_id,
+                    claim=note.core_claim,
+                    child_note_ids=child_note_ids if index == 0 else [],
+                    boundary_conditions=[note.boundary_condition] if note.boundary_condition else [],
+                    counterexamples=[note.counterexample] if note.counterexample else [],
+                    evidence_disputes=note_disputes.get(note.note_id, []),
+                )
+            )
+
+    return axis_hierarchies, perspective_branches
+
+
 def _build_final_summary(
     question_card: QuestionCard,
     kept_notes: list[PerspectiveNote],
     merged_groups: list[list[str]],
+    axis_hierarchies: list[AxisHierarchy],
+    perspective_branches: list[PerspectiveBranch],
     competing_pairs: list[tuple[str, str]],
     compatible_pairs: list[tuple[str, str]],
     evidence_contests: list[str],
@@ -267,6 +331,8 @@ def _build_final_summary(
             )
         )
 
+    lines.extend(["", "Axis hierarchy:"])
+    lines.extend(_render_hierarchy(axis_hierarchies, perspective_branches))
     lines.extend(["", "Merged overlap groups:"])
     lines.extend(_render_lines((_format_group(group) for group in merged_groups)))
     lines.extend(["", "Competing perspectives:"])
@@ -307,3 +373,46 @@ def _format_pair(pair: tuple[str, str]) -> str:
 def _render_lines(values: Iterable[str]) -> list[str]:
     rendered = list(values)
     return rendered if rendered else ["- None"]
+
+
+def _render_hierarchy(
+    axis_hierarchies: list[AxisHierarchy],
+    perspective_branches: list[PerspectiveBranch],
+) -> list[str]:
+    if not axis_hierarchies:
+        return ["- None"]
+
+    branch_lookup = {branch.note_id: branch for branch in perspective_branches}
+    lines: list[str] = []
+    for hierarchy in axis_hierarchies:
+        lines.append(f"- {hierarchy.axis_id}: main {hierarchy.main_note_id}")
+        main_branch = branch_lookup.get(hierarchy.main_note_id)
+        if main_branch:
+            lines.extend(_render_branch(main_branch, branch_lookup, indent="  "))
+    return lines
+
+
+def _render_branch(
+    branch: PerspectiveBranch,
+    branch_lookup: dict[str, PerspectiveBranch],
+    *,
+    indent: str,
+) -> list[str]:
+    lines = [f"{indent}- {branch.note_id}: {_short_phrase(branch.claim)}"]
+    lines.extend(
+        f"{indent}  - boundary: {item}"
+        for item in branch.boundary_conditions
+    )
+    lines.extend(
+        f"{indent}  - counterexample: {item}"
+        for item in branch.counterexamples
+    )
+    lines.extend(
+        f"{indent}  - evidence dispute: {item}"
+        for item in branch.evidence_disputes
+    )
+    for child_note_id in branch.child_note_ids:
+        child_branch = branch_lookup.get(child_note_id)
+        if child_branch:
+            lines.extend(_render_branch(child_branch, branch_lookup, indent=indent + "  "))
+    return lines

@@ -29,6 +29,19 @@ class SynthesizeMapTests(unittest.TestCase):
                 supporting_card_ids=["knowledge_commute", "variable_productivity"],
             ),
             PerspectiveNote(
+                note_id="note_gain_child",
+                axis_id="axis_commute",
+                core_claim="A narrower sub-perspective says remote work helps most when workers can convert commute time into protected deep-work blocks.",
+                reasoning="The productivity mechanism depends on how saved time is reallocated rather than on location alone.",
+                counterexample="If saved commute time is replaced by fragmented caregiving interruptions, output may not rise.",
+                evidence_needed=[
+                    "Track whether saved commute time becomes uninterrupted deep-work time.",
+                    "Measure output changes for workers with versus without home interruptions.",
+                ],
+                verification_question="Do productivity gains persist after accounting for how workers actually reallocate saved commute time?",
+                supporting_card_ids=["knowledge_commute", "variable_productivity"],
+            ),
+            PerspectiveNote(
                 note_id="note_coordination",
                 axis_id="axis_coordination",
                 core_claim="Remote work can decrease employee productivity when handoffs, coaching, and rapid coordination become slower.",
@@ -82,10 +95,35 @@ class SynthesizeMapTests(unittest.TestCase):
         perspective_map = synthesize_map(question_card, kept_notes, review_decisions)
 
         self.assertEqual(perspective_map.question_id, question_card.question_id)
-        self.assertEqual([note.note_id for note in perspective_map.kept_notes], ["note_gain", "note_coordination", "note_selection"])
+        self.assertEqual(
+            [note.note_id for note in perspective_map.kept_notes],
+            ["note_gain", "note_gain_child", "note_coordination", "note_selection"],
+        )
         self.assertEqual(perspective_map.merged_groups, [["note_gain", "note_merge_candidate"]])
         self.assertIn(("note_coordination", "note_gain"), perspective_map.competing_perspectives)
         self.assertIn(("note_gain", "note_selection"), perspective_map.compatible_perspectives)
+        self.assertEqual(
+            perspective_map.axis_hierarchies[0].main_note_id,
+            "note_gain",
+        )
+        self.assertEqual(
+            perspective_map.axis_hierarchies[0].sub_perspective_ids,
+            ["note_gain_child"],
+        )
+        gain_branch = next(
+            branch for branch in perspective_map.perspective_branches if branch.note_id == "note_gain"
+        )
+        gain_child_branch = next(
+            branch for branch in perspective_map.perspective_branches if branch.note_id == "note_gain_child"
+        )
+        self.assertEqual(gain_branch.child_note_ids, ["note_gain_child"])
+        self.assertTrue(
+            any("note_gain_child:" in item for item in gain_child_branch.evidence_disputes)
+        )
+        self.assertEqual(
+            gain_child_branch.counterexamples,
+            ["If saved commute time is replaced by fragmented caregiving interruptions, output may not rise."],
+        )
         self.assertTrue(
             any(
                 "note_gain" in item and "note_coordination" in item
@@ -95,6 +133,9 @@ class SynthesizeMapTests(unittest.TestCase):
         self.assertTrue(any(item.startswith("note_gain:") for item in perspective_map.boundary_cases))
         self.assertIsNotNone(perspective_map.final_summary)
         self.assertIn("Kept note structure:", perspective_map.final_summary)
+        self.assertIn("Axis hierarchy:", perspective_map.final_summary)
+        self.assertIn("counterexample:", perspective_map.final_summary)
+        self.assertIn("evidence dispute:", perspective_map.final_summary)
         self.assertIn("Competing perspectives:", perspective_map.final_summary)
         self.assertIn("Compatible perspectives:", perspective_map.final_summary)
         self.assertIn("Boundary cases:", perspective_map.final_summary)
