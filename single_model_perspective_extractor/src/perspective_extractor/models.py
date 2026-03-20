@@ -255,6 +255,42 @@ class PerspectiveNote:
 
 
 @dataclass(slots=True)
+class PerspectiveBranch:
+    """Lightweight hierarchical view for one perspective and its attached qualifiers."""
+
+    note_id: str
+    axis_id: str
+    claim: str
+    child_note_ids: list[str] = field(default_factory=list)
+    boundary_conditions: list[str] = field(default_factory=list)
+    counterexamples: list[str] = field(default_factory=list)
+    evidence_disputes: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.note_id = _require_text(self.note_id, "note_id")
+        self.axis_id = _require_text(self.axis_id, "axis_id")
+        self.claim = _require_text(self.claim, "claim")
+        self.child_note_ids = _clean_string_list(self.child_note_ids)
+        self.boundary_conditions = _clean_string_list(self.boundary_conditions)
+        self.counterexamples = _clean_string_list(self.counterexamples)
+        self.evidence_disputes = _clean_string_list(self.evidence_disputes)
+
+
+@dataclass(slots=True)
+class AxisHierarchy:
+    """Axis-level hierarchy connecting a main perspective to sub-perspectives."""
+
+    axis_id: str
+    main_note_id: str
+    sub_perspective_ids: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.axis_id = _require_text(self.axis_id, "axis_id")
+        self.main_note_id = _require_text(self.main_note_id, "main_note_id")
+        self.sub_perspective_ids = _clean_string_list(self.sub_perspective_ids)
+
+
+@dataclass(slots=True)
 class ReviewDecision:
     """Overlap or novelty judgment for a generated perspective."""
 
@@ -292,6 +328,8 @@ class PerspectiveMap:
     kept_notes: list[PerspectiveNote]
     map_id: str = field(default_factory=lambda: _make_id("map"))
     merged_groups: list[list[str]] = field(default_factory=list)
+    axis_hierarchies: list[AxisHierarchy] = field(default_factory=list)
+    perspective_branches: list[PerspectiveBranch] = field(default_factory=list)
     competing_perspectives: list[tuple[str, str]] = field(default_factory=list)
     compatible_perspectives: list[tuple[str, str]] = field(default_factory=list)
     evidence_contests: list[str] = field(default_factory=list)
@@ -308,6 +346,8 @@ class PerspectiveMap:
             if cleaned_group:
                 cleaned_groups.append(cleaned_group)
         self.merged_groups = cleaned_groups
+        self.axis_hierarchies = list(self.axis_hierarchies)
+        self.perspective_branches = list(self.perspective_branches)
         self.competing_perspectives = _clean_relation_pairs(
             self.competing_perspectives,
             "competing_perspectives item",
@@ -344,10 +384,12 @@ class PipelineResult:
 
 
 __all__ = [
+    "AxisHierarchy",
     "AxisCard",
     "ControversyCard",
     "KnowledgeCard",
     "PerspectiveMap",
+    "PerspectiveBranch",
     "PerspectiveNote",
     "PerspectiveRecord",
     "PipelineInput",
