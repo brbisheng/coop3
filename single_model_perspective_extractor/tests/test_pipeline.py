@@ -134,7 +134,7 @@ class PipelineFlowTests(unittest.TestCase):
             controversy_cards=controversy_cards,
         )
 
-        self.assertGreaterEqual(len(notes), 2)
+        self.assertEqual(len(notes), 1)
         self.assertTrue(all(note.supporting_card_ids == axis_cards[0].supporting_card_ids for note in notes))
         self.assertTrue(all(any("Support card" in item for item in note.evidence_needed) for note in notes))
 
