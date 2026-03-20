@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from .models import (
     AxisCard,
     ControversyCard,
@@ -26,6 +28,7 @@ from .review import review_notes as review_note_decisions, review_records
 from .synthesize import synthesize_map, synthesize_summary
 from .axes import generate_axes
 from .expand import expand_axis as expand_axis_note
+from .prompts import PromptVariant, resolve_prompt_variant
 
 
 def _card_id(card: KnowledgeCard | VariableCard | ControversyCard) -> str:
@@ -81,6 +84,20 @@ def _note_id_for_axis(axis_id: str) -> str:
     if axis_id.startswith("axis_"):
         return f"note_{axis_id[5:]}"
     return f"note_{axis_id}"
+
+
+@dataclass(frozen=True, slots=True)
+class PipelinePromptConfig:
+    """Reserved prompt/lens options for forward-compatible pipeline entrypoints."""
+
+    prompt_variant: PromptVariant | None = None
+    lens: PromptVariant | None = None
+
+    @property
+    def resolved_prompt_variant(self) -> PromptVariant | None:
+        """Return the validated prompt variant selected for this pipeline run."""
+
+        return resolve_prompt_variant(prompt_variant=self.prompt_variant, lens=self.lens)
 
 
 
@@ -198,13 +215,23 @@ def _partition_notes_by_review_action(
     return grouped_notes
 
 
-def run_pipeline(question: str) -> PipelineResult:
+def run_pipeline(
+    question: str,
+    *,
+    prompt_variant: PromptVariant | None = None,
+    lens: PromptVariant | None = None,
+) -> PipelineResult:
     """Run the full structured perspective-extraction pipeline for one question.
 
     The returned ``PipelineResult`` preserves the full stage-by-stage trace:
     normalized question, support cards, axis cards, raw notes, review decisions,
     action-specific note partitions, and the synthesized final map.
     """
+
+    PipelinePromptConfig(
+        prompt_variant=prompt_variant,
+        lens=lens,
+    ).resolved_prompt_variant
 
     question_card = normalize_question(question)
     knowledge_cards = generate_knowledge_cards(question_card)
@@ -254,11 +281,21 @@ def run_pipeline(question: str) -> PipelineResult:
 class PerspectiveExtractionPipeline:
     """Backward-compatible orchestrator for the earlier scaffold interface."""
 
-    def run(self, pipeline_input: PipelineInput) -> list[PerspectiveRecord]:
+    def run(
+        self,
+        pipeline_input: PipelineInput,
+        *,
+        prompt_variant: PromptVariant | None = None,
+        lens: PromptVariant | None = None,
+    ) -> list[PerspectiveRecord]:
         normalized_topic = normalize_text(pipeline_input.topic)
         source_text = normalize_text(pipeline_input.source_text)
         background = collect_background(normalized_topic)
-        result = run_pipeline(normalized_topic)
+        result = run_pipeline(
+            normalized_topic,
+            prompt_variant=prompt_variant,
+            lens=lens,
+        )
 
         records = [
             PerspectiveRecord(
@@ -273,12 +310,25 @@ class PerspectiveExtractionPipeline:
         ]
         return review_records(records)
 
-    def summarize(self, pipeline_input: PipelineInput) -> str:
-        return synthesize_summary(self.run(pipeline_input))
+    def summarize(
+        self,
+        pipeline_input: PipelineInput,
+        *,
+        prompt_variant: PromptVariant | None = None,
+        lens: PromptVariant | None = None,
+    ) -> str:
+        return synthesize_summary(
+            self.run(
+                pipeline_input,
+                prompt_variant=prompt_variant,
+                lens=lens,
+            )
+        )
 
 
 __all__ = [
     "PerspectiveExtractionPipeline",
+    "PipelinePromptConfig",
     "build_perspective_map",
     "expand_axis",
     "expand_axes",
