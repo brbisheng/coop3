@@ -81,17 +81,23 @@ class QuestionCard:
     raw_question: str
     cleaned_question: str
     question_id: str = field(default_factory=lambda: _make_id("question"))
+    actor_entity: str | None = None
+    outcome_variable: str | None = None
     domain_hint: str | None = None
     assumptions: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
+    missing_pieces: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.question_id = _require_text(self.question_id, "question_id")
         self.raw_question = _require_text(self.raw_question, "raw_question")
         self.cleaned_question = _require_text(self.cleaned_question, "cleaned_question")
+        self.actor_entity = self.actor_entity.strip() if self.actor_entity else None
+        self.outcome_variable = self.outcome_variable.strip() if self.outcome_variable else None
         self.domain_hint = self.domain_hint.strip() if self.domain_hint else None
         self.assumptions = _clean_string_list(self.assumptions)
         self.keywords = _clean_string_list(self.keywords)
+        self.missing_pieces = _clean_string_list(self.missing_pieces)
 
 
 @dataclass(slots=True)
