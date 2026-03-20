@@ -89,3 +89,20 @@ class AxesCliTests(unittest.TestCase):
         self.assertIn("focus", payload["axis_cards"][0])
         self.assertIn("how_is_it_distinct", payload["axis_cards"][0])
 
+
+
+class ExpandCliTests(unittest.TestCase):
+    def test_expand_defaults_to_raw_json_perspective_note_list(self) -> None:
+        buffer = io.StringIO()
+
+        with redirect_stdout(buffer):
+            exit_code = cli.main(["expand", "How does remote work affect employee productivity?"])
+
+        payload = json.loads(buffer.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertIsInstance(payload, list)
+        self.assertGreaterEqual(len(payload), 8)
+        self.assertIn("note_id", payload[0])
+        self.assertIn("axis_id", payload[0])
+        self.assertEqual(payload[0]["note_id"], payload[0]["axis_id"].replace("axis_", "note_", 1))
+

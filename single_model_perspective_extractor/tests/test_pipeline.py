@@ -10,7 +10,7 @@ from perspective_extractor.models import (
     QuestionCard,
     VariableCard,
 )
-from perspective_extractor.pipeline import expand_axis, generate_axes, run_pipeline
+from perspective_extractor.pipeline import expand_axes, expand_axis, generate_axes, run_pipeline
 
 
 class PipelineFlowTests(unittest.TestCase):
@@ -137,6 +137,87 @@ class PipelineFlowTests(unittest.TestCase):
         self.assertEqual(len(notes), 1)
         self.assertTrue(all(note.supporting_card_ids == axis_cards[0].supporting_card_ids for note in notes))
         self.assertTrue(all(any("Support card" in item for item in note.evidence_needed) for note in notes))
+
+    def test_expand_axes_runs_each_axis_with_only_its_support_cards_and_stable_note_ids(self) -> None:
+        question_card = QuestionCard(
+            raw_question="How does remote work affect employee productivity?",
+            cleaned_question="How does remote work affect employee productivity?",
+            actor_entity="remote work",
+            outcome_variable="employee productivity",
+            domain_hint="business",
+        )
+        knowledge_cards = [
+            KnowledgeCard(title="Question framing", content="frame"),
+            KnowledgeCard(title="Mechanism map", content="channels"),
+        ]
+        variable_cards = [
+            VariableCard(name="remote work", variable_role="actor", definition="actor"),
+            VariableCard(name="employee productivity", variable_role="outcome", definition="outcome"),
+        ]
+        controversy_cards = [
+            ControversyCard(question="Is it causal?", sides=["yes", "no"]),
+        ]
+        axis_cards = [
+            AxisCard(
+                name="framing lens",
+                axis_type="framing",
+                focus="focus one",
+                how_is_it_distinct="distinct one",
+                axis_id="axis_custom_one",
+                supporting_card_ids=[knowledge_cards[0].knowledge_id, variable_cards[0].variable_id],
+            ),
+            AxisCard(
+                name="causal lens",
+                axis_type="mechanism",
+                focus="focus two",
+                how_is_it_distinct="distinct two",
+                axis_id="axis_custom_two",
+                supporting_card_ids=[knowledge_cards[1].knowledge_id, controversy_cards[0].controversy_id],
+            ),
+        ]
+
+        captured_contexts: list[list[str]] = []
+
+        def expand_note_stub(question: QuestionCard, axis: AxisCard, *, context_cards: list[object]) -> PerspectiveNote:
+            captured_contexts.append(
+                [
+                    getattr(card, "knowledge_id", None)
+                    or getattr(card, "variable_id", None)
+                    or getattr(card, "controversy_id", None)
+                    for card in context_cards
+                ]
+            )
+            return PerspectiveNote(
+                axis_id=axis.axis_id,
+                core_claim=f"claim for {axis.name}",
+                reasoning="reasoning",
+                note_id="note_random",
+                supporting_card_ids=[
+                    getattr(card, "knowledge_id", None)
+                    or getattr(card, "variable_id", None)
+                    or getattr(card, "controversy_id", None)
+                    for card in context_cards
+                ],
+            )
+
+        with patch("perspective_extractor.pipeline.expand_axis_note", side_effect=expand_note_stub):
+            notes = expand_axes(
+                axis_cards,
+                question_card,
+                knowledge_cards=knowledge_cards,
+                variable_cards=variable_cards,
+                controversy_cards=controversy_cards,
+            )
+
+        self.assertEqual(
+            captured_contexts,
+            [
+                [knowledge_cards[0].knowledge_id, variable_cards[0].variable_id],
+                [knowledge_cards[1].knowledge_id, controversy_cards[0].controversy_id],
+            ],
+        )
+        self.assertEqual([note.note_id for note in notes], ["note_custom_one", "note_custom_two"])
+        self.assertEqual([note.axis_id for note in notes], ["axis_custom_one", "axis_custom_two"])
 
 
 if __name__ == "__main__":

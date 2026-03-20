@@ -18,7 +18,7 @@ from .models import (
     VariableCard,
 )
 from .normalize import normalize_question
-from .pipeline import PerspectiveExtractionPipeline
+from .pipeline import PerspectiveExtractionPipeline, expand_axes
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -64,6 +64,33 @@ def build_parser() -> argparse.ArgumentParser:
         "--skip-controversies",
         action="store_true",
         help="Do not generate or print controversy cards.",
+    )
+
+    expand_parser = subparsers.add_parser(
+        "expand",
+        help="Generate raw PerspectiveNote records by expanding each axis independently.",
+    )
+    expand_parser.add_argument("question", help="Question text to expand into perspective notes.")
+    expand_parser.add_argument(
+        "--format",
+        choices=("json", "markdown"),
+        default="json",
+        help="Output format. JSON remains the stable default for raw PerspectiveNote output.",
+    )
+    expand_parser.add_argument(
+        "--skip-knowledge",
+        action="store_true",
+        help="Do not generate or use knowledge cards during expansion.",
+    )
+    expand_parser.add_argument(
+        "--skip-variables",
+        action="store_true",
+        help="Do not generate or use variable cards during expansion.",
+    )
+    expand_parser.add_argument(
+        "--skip-controversies",
+        action="store_true",
+        help="Do not generate or use controversy cards during expansion.",
     )
 
     return parser
@@ -253,6 +280,43 @@ def _format_axes_json(
     return json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
 
 
+def _format_perspective_notes_json(notes: list[Any]) -> str:
+    return json.dumps([asdict(note) for note in notes], indent=2, ensure_ascii=False, sort_keys=True)
+
+
+def _format_perspective_notes_markdown(notes: list[Any]) -> str:
+    sections = ["# Perspective Notes"]
+    if not notes:
+        sections.append("- None")
+        return "\n".join(sections)
+
+    for index, note in enumerate(notes, start=1):
+        sections.extend(
+            [
+                "",
+                f"## PerspectiveNote {index}",
+                f"- **note_id:** `{note.note_id}`",
+                f"- **axis_id:** `{note.axis_id}`",
+                f"- **core_claim:** {note.core_claim}",
+                f"- **reasoning:** {note.reasoning}",
+                f"- **counterexample:** {note.counterexample or 'N/A'}",
+                f"- **boundary_condition:** {note.boundary_condition or 'N/A'}",
+                f"- **testable_implication:** {note.testable_implication or 'N/A'}",
+                f"- **verification_question:** {note.verification_question or 'N/A'}",
+                "- **supporting_card_ids:**",
+                *_format_string_list(note.supporting_card_ids),
+                "- **planned_subquestions:**",
+                *_format_string_list(note.planned_subquestions),
+                "- **subanswer_trace:**",
+                *_format_string_list(note.subanswer_trace),
+                "- **evidence_needed:**",
+                *_format_string_list(note.evidence_needed),
+            ]
+        )
+
+    return "\n".join(sections)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the perspective extractor CLI."""
 
@@ -298,6 +362,30 @@ def main(argv: Sequence[str] | None = None) -> int:
                     axis_cards=axis_cards,
                 )
             )
+        return 0
+
+    if args.command == "expand":
+        question_card = normalize_question(args.question)
+        knowledge_cards = [] if args.skip_knowledge else generate_knowledge_cards(question_card)
+        variable_cards = [] if args.skip_variables else generate_variable_cards(question_card)
+        controversy_cards = [] if args.skip_controversies else generate_controversy_cards(question_card)
+        axis_cards = generate_axes(
+            question_card,
+            knowledge_cards=knowledge_cards,
+            variable_cards=variable_cards,
+            controversy_cards=controversy_cards,
+        )
+        perspective_notes = expand_axes(
+            axis_cards,
+            question_card,
+            knowledge_cards=knowledge_cards,
+            variable_cards=variable_cards,
+            controversy_cards=controversy_cards,
+        )
+        if args.format == "markdown":
+            print(_format_perspective_notes_markdown(perspective_notes))
+        else:
+            print(_format_perspective_notes_json(perspective_notes))
         return 0
 
     pipeline = PerspectiveExtractionPipeline()
