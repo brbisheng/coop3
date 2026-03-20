@@ -372,6 +372,10 @@ class PipelineResult:
     controversy_cards: list[ControversyCard] = field(default_factory=list)
     perspective_notes: list[PerspectiveNote] = field(default_factory=list)
     review_decisions: list[ReviewDecision] = field(default_factory=list)
+    kept_notes: list[PerspectiveNote] = field(default_factory=list)
+    merged_notes: list[PerspectiveNote] = field(default_factory=list)
+    rewrite_notes: list[PerspectiveNote] = field(default_factory=list)
+    dropped_notes: list[PerspectiveNote] = field(default_factory=list)
     perspective_map: PerspectiveMap | None = None
 
     def __post_init__(self) -> None:
@@ -381,6 +385,10 @@ class PipelineResult:
         self.controversy_cards = list(self.controversy_cards)
         self.perspective_notes = list(self.perspective_notes)
         self.review_decisions = list(self.review_decisions)
+        self.kept_notes = list(self.kept_notes)
+        self.merged_notes = list(self.merged_notes)
+        self.rewrite_notes = list(self.rewrite_notes)
+        self.dropped_notes = list(self.dropped_notes)
 
 
 __all__ = [
