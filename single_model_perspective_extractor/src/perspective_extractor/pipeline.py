@@ -75,6 +75,41 @@ def _summarize_supporting_cards(
     return summary
 
 
+def _note_id_for_axis(axis_id: str) -> str:
+    """Derive a deterministic note identifier for a given axis identifier."""
+
+    if axis_id.startswith("axis_"):
+        return f"note_{axis_id[5:]}"
+    return f"note_{axis_id}"
+
+
+
+def _select_axis_context_cards(
+    axis_card: AxisCard,
+    *,
+    knowledge_cards: list[KnowledgeCard] | None = None,
+    variable_cards: list[VariableCard] | None = None,
+    controversy_cards: list[ControversyCard] | None = None,
+) -> list[KnowledgeCard | VariableCard | ControversyCard]:
+    """Return only the supporting cards assigned to the current axis."""
+
+    ordered_cards: list[KnowledgeCard | VariableCard | ControversyCard] = [
+        *(knowledge_cards or []),
+        *(variable_cards or []),
+        *(controversy_cards or []),
+    ]
+    if not axis_card.supporting_card_ids:
+        return []
+
+    card_lookup = {_card_id(card): card for card in ordered_cards}
+    return [
+        card_lookup[card_id]
+        for card_id in axis_card.supporting_card_ids
+        if card_id in card_lookup
+    ]
+
+
+
 def expand_axis(
     axis_card: AxisCard,
     question_card: QuestionCard,
@@ -85,17 +120,43 @@ def expand_axis(
 ) -> list[PerspectiveNote]:
     """Expand one axis into an isolated traceable perspective note."""
 
-    context_cards: list[KnowledgeCard | VariableCard | ControversyCard] = [
-        *(knowledge_cards or []),
-        *(variable_cards or []),
-        *(controversy_cards or []),
-    ]
     note = expand_axis_note(
         question_card,
         axis_card,
-        context_cards=context_cards,
+        context_cards=_select_axis_context_cards(
+            axis_card,
+            knowledge_cards=knowledge_cards,
+            variable_cards=variable_cards,
+            controversy_cards=controversy_cards,
+        ),
     )
+    note.note_id = _note_id_for_axis(axis_card.axis_id)
     return [note]
+
+
+
+def expand_axes(
+    axis_cards: list[AxisCard],
+    question_card: QuestionCard,
+    *,
+    knowledge_cards: list[KnowledgeCard] | None = None,
+    variable_cards: list[VariableCard] | None = None,
+    controversy_cards: list[ControversyCard] | None = None,
+) -> list[PerspectiveNote]:
+    """Expand all axes independently and return the raw PerspectiveNote list."""
+
+    perspective_notes: list[PerspectiveNote] = []
+    for axis_card in axis_cards:
+        perspective_notes.extend(
+            expand_axis(
+                axis_card,
+                question_card,
+                knowledge_cards=knowledge_cards,
+                variable_cards=variable_cards,
+                controversy_cards=controversy_cards,
+            )
+        )
+    return perspective_notes
 
 
 def review_notes(notes: list[PerspectiveNote]) -> list[ReviewDecision]:
@@ -150,17 +211,13 @@ def run_pipeline(question: str) -> PipelineResult:
         controversy_cards=controversy_cards,
     )
 
-    perspective_notes: list[PerspectiveNote] = []
-    for axis_card in axis_cards:
-        perspective_notes.extend(
-            expand_axis(
-                axis_card,
-                question_card,
-                knowledge_cards=knowledge_cards,
-                variable_cards=variable_cards,
-                controversy_cards=controversy_cards,
-            )
-        )
+    perspective_notes = expand_axes(
+        axis_cards,
+        question_card,
+        knowledge_cards=knowledge_cards,
+        variable_cards=variable_cards,
+        controversy_cards=controversy_cards,
+    )
 
     review_decisions = review_notes(perspective_notes)
     kept_note_ids = {decision.target_note_id for decision in review_decisions if decision.action == "keep"}
@@ -213,6 +270,7 @@ __all__ = [
     "PerspectiveExtractionPipeline",
     "build_perspective_map",
     "expand_axis",
+    "expand_axes",
     "generate_axes",
     "review_notes",
     "run_pipeline",
