@@ -11,7 +11,13 @@ from perspective_extractor.models import (
     QuestionCard,
     VariableCard,
 )
-from perspective_extractor.pipeline import expand_axes, expand_axis, generate_axes, run_pipeline
+from perspective_extractor.pipeline import (
+    PipelinePromptConfig,
+    expand_axes,
+    expand_axis,
+    generate_axes,
+    run_pipeline,
+)
 
 
 class PipelineFlowTests(unittest.TestCase):
@@ -292,6 +298,43 @@ class PipelineFlowTests(unittest.TestCase):
         self.assertEqual([note.note_id for note in result.rewrite_notes], ["note_rewrite"])
         self.assertEqual([note.note_id for note in result.dropped_notes], ["note_drop"])
         self.assertEqual([note.note_id for note in result.perspective_map.kept_notes], ["note_keep"])
+
+
+class PipelinePromptConfigTests(unittest.TestCase):
+    def test_pipeline_prompt_config_accepts_reserved_variants(self) -> None:
+        config = PipelinePromptConfig(prompt_variant="language_lens")
+
+        self.assertEqual(config.resolved_prompt_variant, "language_lens")
+
+    def test_run_pipeline_validates_reserved_variant_aliases(self) -> None:
+        with self.assertRaisesRegex(ValueError, "prompt_variant and lens must match"):
+            run_pipeline("How does remote work affect productivity?", prompt_variant="language_lens", lens="cultural_lens")
+
+    def test_run_pipeline_accepts_future_lens_placeholders_without_behavior_change(self) -> None:
+        with (
+            patch("perspective_extractor.pipeline.normalize_question") as normalize_mock,
+            patch("perspective_extractor.pipeline.generate_knowledge_cards", return_value=[]),
+            patch("perspective_extractor.pipeline.generate_variable_cards", return_value=[]),
+            patch("perspective_extractor.pipeline.generate_controversy_cards", return_value=[]),
+            patch("perspective_extractor.pipeline.generate_axes", return_value=[]),
+            patch("perspective_extractor.pipeline.review_notes", return_value=[]),
+            patch("perspective_extractor.pipeline.build_perspective_map", return_value=None),
+        ):
+            normalize_mock.return_value = QuestionCard(
+                raw_question="How does remote work affect productivity?",
+                cleaned_question="How does remote work affect productivity?",
+                actor_entity="remote work",
+                outcome_variable="productivity",
+                domain_hint="business",
+            )
+
+            result = run_pipeline(
+                "How does remote work affect productivity?",
+                lens="institutional_lens",
+            )
+
+        normalize_mock.assert_called_once_with("How does remote work affect productivity?")
+        self.assertIsInstance(result, PipelineResult)
 
 
 if __name__ == "__main__":
