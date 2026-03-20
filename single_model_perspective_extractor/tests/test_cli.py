@@ -42,3 +42,50 @@ class NormalizeCliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AxesCliTests(unittest.TestCase):
+    def test_axes_defaults_to_markdown_with_question_support_cards_and_axes(self) -> None:
+        buffer = io.StringIO()
+
+        with redirect_stdout(buffer):
+            exit_code = cli.main(["axes", "How does remote work affect employee productivity?"])
+
+        output = buffer.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("# Perspective Axes", output)
+        self.assertIn("## QuestionCard", output)
+        self.assertIn("## Knowledge Cards", output)
+        self.assertIn("## Variable Cards", output)
+        self.assertIn("## Controversy Cards", output)
+        self.assertIn("## Axis Cards", output)
+        self.assertIn("**type:**", output)
+        self.assertIn("**focus:**", output)
+        self.assertIn("**distinctness:**", output)
+
+    def test_axes_json_can_skip_supporting_cards(self) -> None:
+        buffer = io.StringIO()
+
+        with redirect_stdout(buffer):
+            exit_code = cli.main(
+                [
+                    "axes",
+                    "How does remote work affect employee productivity?",
+                    "--format",
+                    "json",
+                    "--skip-knowledge",
+                    "--skip-variables",
+                    "--skip-controversies",
+                ]
+            )
+
+        payload = json.loads(buffer.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["knowledge_cards"], [])
+        self.assertEqual(payload["variable_cards"], [])
+        self.assertEqual(payload["controversy_cards"], [])
+        self.assertGreaterEqual(len(payload["axis_cards"]), 8)
+        self.assertIn("axis_type", payload["axis_cards"][0])
+        self.assertIn("focus", payload["axis_cards"][0])
+        self.assertIn("how_is_it_distinct", payload["axis_cards"][0])
+
