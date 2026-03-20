@@ -385,6 +385,16 @@ perspective-extract run "Why do some borrowers avoid a lower-interest formal loa
 
 This final command should output a complete `PerspectiveMap` as JSON or markdown.
 
+### Post-v1 evaluation gate for `PerspectiveMap`
+After v1 ships, evaluate the `PerspectiveMap` shape against real problem samples before expanding the synthesis machinery.
+
+Keep the current flat / light-hierarchy representation if it can still express the meaningful differences among perspectives. Only plan a stronger exploration structure when repeated review on real samples shows one of these failure modes:
+- flat or lightly hierarchical branches cannot express complex dependency relationships
+- one main perspective repeatedly needs systematic sub-branching rather than a single branch plus child notes
+- even after review, the map still cannot express multi-layer competitive structures cleanly
+
+If those failures appear, then decide whether `synthesize.py` should grow into a more explicit tree-search and branch-comparison mechanism. Until that evidence exists, treat the current `PerspectiveMap` as the default v1 target rather than prematurely expanding the representation.
+
 ---
 
 ## 9. Minimal program interface

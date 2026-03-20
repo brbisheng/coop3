@@ -30,3 +30,13 @@ single-model pipeline. The package namespace is `perspective_extractor`.
 - `perspective-extractor axes "..." --format json`: emits the same card collections in JSON, while `--skip-knowledge`, `--skip-variables`, and `--skip-controversies` suppress optional supporting cards.
 - `perspective-extractor run "..."`: emits the full `PipelineResult` JSON trace by default, preserving normalized question, support cards, axes, raw notes, review decisions, review partitions, and the synthesized perspective map rather than only the final summary.
 - `perspective-extractor run "..." --format markdown`: wraps that same stable JSON export in a markdown code block so a future human-oriented export can evolve without changing JSON as the primary machine-readable contract.
+
+## PerspectiveMap scope after v1
+
+Treat the current `PerspectiveMap` as the default v1 representation, then validate it with real question samples before expanding synthesis complexity. Consider upgrading `synthesize.py` to a stronger tree / branch-comparison mechanism only if repeated reviews show that:
+
+- flat or lightly hierarchical branches cannot capture complex dependency relationships
+- one dominant perspective needs systematic branching under the same top-level view
+- multi-layer competitive structures are still hard to express even after review cleanup
+
+Until those concrete failures appear, prefer keeping the existing representation simple and evidence-driven.
