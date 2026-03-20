@@ -24,6 +24,7 @@ from .knowledge import (
 )
 from .review import review_records
 from .synthesize import synthesize_summary
+from .axes import generate_axes
 
 
 def _card_id(card: KnowledgeCard | VariableCard | ControversyCard) -> str:
@@ -71,87 +72,6 @@ def _summarize_supporting_cards(
                 f"{label} support: " + ", ".join(_card_label(card) for card in cards[:2])
             )
     return summary
-
-
-def generate_axes(
-    question_card: QuestionCard,
-    *,
-    knowledge_cards: list[KnowledgeCard] | None = None,
-    variable_cards: list[VariableCard] | None = None,
-    controversy_cards: list[ControversyCard] | None = None,
-) -> list[AxisCard]:
-    """Generate axis cards for a normalized question.
-
-    The optional knowledge / variable / controversy cards are auxiliary inputs.
-    The resulting ``supporting_card_ids`` field records exactly which upstream
-    cards were passed into each axis so downstream stages can trace provenance.
-    """
-
-    actor = question_card.actor_entity or "focal actor"
-    outcome = question_card.outcome_variable or "focal outcome"
-    domain = question_card.domain_hint or "general"
-    variable_cards = variable_cards or []
-    knowledge_cards = knowledge_cards or []
-    controversy_cards = controversy_cards or []
-
-    role_map = {card.variable_role: card for card in variable_cards}
-    knowledge_primary = knowledge_cards[:2]
-    mechanism_knowledge = knowledge_cards[1:3] or knowledge_cards[:2]
-    controversy_primary = controversy_cards[:2]
-
-    axis_specs: list[tuple[str, str, str, str, list[KnowledgeCard | VariableCard | ControversyCard]]] = [
-        (
-            "baseline framing",
-            "framing",
-            f"Clarify how {actor} and {outcome} should be defined before comparing perspectives.",
-            "Separates construct definition and scope setting from later causal or evaluative claims.",
-            [*knowledge_primary, *[card for role, card in role_map.items() if role in {"actor", "outcome", "constraint"}]],
-        ),
-        (
-            "causal pathways",
-            "mechanism",
-            f"Examine the direct and indirect channels through which {actor} could shape {outcome}.",
-            "Centers mechanism differences rather than only the direction of the effect.",
-            [*mechanism_knowledge, *[card for role, card in role_map.items() if role in {"actor", "state", "outcome"}], *controversy_primary[:1]],
-        ),
-        (
-            "decision and implementation",
-            "decision",
-            f"Compare choices about whether, when, and how to deploy {actor} in the {domain} domain.",
-            "Focuses on actionable levers and implementation tradeoffs instead of abstract relationship claims.",
-            [*[card for role, card in role_map.items() if role in {"decision", "constraint", "outcome"}], *controversy_primary[:1]],
-        ),
-        (
-            "scope conditions",
-            "scope",
-            f"Test when claims about {actor} and {outcome} travel across populations, settings, and time horizons.",
-            "Highlights heterogeneity and external-validity boundaries that can reverse conclusions.",
-            [*[card for role, card in role_map.items() if role in {"state", "constraint", "outcome"}], *controversy_primary[1:2], *knowledge_cards[2:4]],
-        ),
-    ]
-
-    axes: list[AxisCard] = []
-    for priority, (name, axis_type, focus, distinctness, supporting_cards) in enumerate(axis_specs, start=1):
-        summary = _summarize_supporting_cards(
-            knowledge_cards=[card for card in supporting_cards if isinstance(card, KnowledgeCard)],
-            variable_cards=[card for card in supporting_cards if isinstance(card, VariableCard)],
-            controversy_cards=[card for card in supporting_cards if isinstance(card, ControversyCard)],
-        )
-        axes.append(
-            AxisCard(
-                name=name,
-                axis_type=axis_type,
-                focus=focus,
-                how_is_it_distinct=(distinctness + (f" Support trace: {'; '.join(summary)}." if summary else "")),
-                priority=priority,
-                evidence_needed=[
-                    f"Evidence needed for the {name} axis on question {question_card.question_id}.",
-                ],
-                verification_question=f"Does the {name} axis add a distinct lens on {question_card.cleaned_question}",
-                supporting_card_ids=_unique_card_ids(supporting_cards),
-            )
-        )
-    return axes
 
 
 def expand_axis(
