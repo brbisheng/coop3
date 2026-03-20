@@ -192,6 +192,7 @@ class AxisCard:
     priority: int = 0
     evidence_needed: list[str] = field(default_factory=list)
     verification_question: str | None = None
+    supporting_card_ids: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.axis_id = _require_text(self.axis_id, "axis_id")
@@ -208,6 +209,7 @@ class AxisCard:
         self.verification_question = (
             self.verification_question.strip() if self.verification_question else None
         )
+        self.supporting_card_ids = _clean_string_list(self.supporting_card_ids)
 
 
 @dataclass(slots=True)
@@ -225,6 +227,7 @@ class PerspectiveNote:
     verification_question: str | None = None
     competing_perspectives: list[str] = field(default_factory=list)
     compatible_perspectives: list[str] = field(default_factory=list)
+    supporting_card_ids: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.note_id = _require_text(self.note_id, "note_id")
@@ -244,6 +247,7 @@ class PerspectiveNote:
         )
         self.competing_perspectives = _clean_string_list(self.competing_perspectives)
         self.compatible_perspectives = _clean_string_list(self.compatible_perspectives)
+        self.supporting_card_ids = _clean_string_list(self.supporting_card_ids)
 
 
 @dataclass(slots=True)
