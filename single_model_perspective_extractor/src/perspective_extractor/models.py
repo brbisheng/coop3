@@ -228,6 +228,8 @@ class PerspectiveNote:
     competing_perspectives: list[str] = field(default_factory=list)
     compatible_perspectives: list[str] = field(default_factory=list)
     supporting_card_ids: list[str] = field(default_factory=list)
+    planned_subquestions: list[str] = field(default_factory=list)
+    subanswer_trace: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.note_id = _require_text(self.note_id, "note_id")
@@ -248,6 +250,8 @@ class PerspectiveNote:
         self.competing_perspectives = _clean_string_list(self.competing_perspectives)
         self.compatible_perspectives = _clean_string_list(self.compatible_perspectives)
         self.supporting_card_ids = _clean_string_list(self.supporting_card_ids)
+        self.planned_subquestions = _clean_string_list(self.planned_subquestions)
+        self.subanswer_trace = _clean_string_list(self.subanswer_trace)
 
 
 @dataclass(slots=True)
