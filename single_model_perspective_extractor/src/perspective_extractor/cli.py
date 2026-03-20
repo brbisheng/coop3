@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 from dataclasses import asdict
 from typing import Any, Sequence
 
@@ -13,12 +14,14 @@ from .models import (
     AxisCard,
     ControversyCard,
     KnowledgeCard,
+    PerspectiveNote,
     PipelineInput,
     QuestionCard,
+    ReviewDecision,
     VariableCard,
 )
 from .normalize import normalize_question
-from .pipeline import PerspectiveExtractionPipeline, expand_axes
+from .pipeline import PerspectiveExtractionPipeline, expand_axes, review_notes
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -91,6 +94,33 @@ def build_parser() -> argparse.ArgumentParser:
         "--skip-controversies",
         action="store_true",
         help="Do not generate or use controversy cards during expansion.",
+    )
+
+    review_parser = subparsers.add_parser(
+        "review",
+        help="Generate raw notes, review them, and print the review decisions plus summary stats.",
+    )
+    review_parser.add_argument("question", help="Question text to review after note expansion.")
+    review_parser.add_argument(
+        "--format",
+        choices=("json", "markdown"),
+        default="json",
+        help="Output format. JSON remains the stable default for review output.",
+    )
+    review_parser.add_argument(
+        "--skip-knowledge",
+        action="store_true",
+        help="Do not generate or use knowledge cards during review.",
+    )
+    review_parser.add_argument(
+        "--skip-variables",
+        action="store_true",
+        help="Do not generate or use variable cards during review.",
+    )
+    review_parser.add_argument(
+        "--skip-controversies",
+        action="store_true",
+        help="Do not generate or use controversy cards during review.",
     )
 
     return parser
@@ -280,11 +310,11 @@ def _format_axes_json(
     return json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
 
 
-def _format_perspective_notes_json(notes: list[Any]) -> str:
+def _format_perspective_notes_json(notes: list[PerspectiveNote]) -> str:
     return json.dumps([asdict(note) for note in notes], indent=2, ensure_ascii=False, sort_keys=True)
 
 
-def _format_perspective_notes_markdown(notes: list[Any]) -> str:
+def _format_perspective_notes_markdown(notes: list[PerspectiveNote]) -> str:
     sections = ["# Perspective Notes"]
     if not notes:
         sections.append("- None")
@@ -317,6 +347,92 @@ def _format_perspective_notes_markdown(notes: list[Any]) -> str:
     return "\n".join(sections)
 
 
+def _review_action_summary(review_decisions: list[ReviewDecision]) -> dict[str, int]:
+    counts = Counter(decision.action for decision in review_decisions)
+    return {
+        "kept": counts["keep"],
+        "merged": counts["merge"],
+        "rewritten": counts["rewrite"],
+        "dropped": counts["drop"],
+        "total": len(review_decisions),
+    }
+
+
+def _format_review_decisions_markdown(review_decisions: list[ReviewDecision]) -> str:
+    sections = ["# Review Decisions"]
+    if not review_decisions:
+        sections.append("- None")
+        return "\n".join(sections)
+
+    for index, decision in enumerate(review_decisions, start=1):
+        sections.extend(
+            [
+                "",
+                f"## ReviewDecision {index}",
+                f"- **decision_id:** `{decision.decision_id}`",
+                f"- **target_note_id:** `{decision.target_note_id}`",
+                f"- **action:** {decision.action}",
+                f"- **merge_target_note_id:** {decision.merge_target_note_id or 'N/A'}",
+                f"- **verification_question:** {decision.verification_question or 'N/A'}",
+                f"- **reason:** {decision.reason}",
+            ]
+        )
+
+    return "\n".join(sections)
+
+
+def _format_review_summary_markdown(summary: dict[str, int]) -> str:
+    return "\n".join(
+        [
+            "# Review Summary",
+            f"- **kept:** {summary['kept']}",
+            f"- **merged:** {summary['merged']}",
+            f"- **rewritten:** {summary['rewritten']}",
+            f"- **dropped:** {summary['dropped']}",
+            f"- **total:** {summary['total']}",
+        ]
+    )
+
+
+def _format_review_json(notes: list[PerspectiveNote], review_decisions: list[ReviewDecision]) -> str:
+    payload = {
+        "raw_notes": [asdict(note) for note in notes],
+        "review_decisions": [asdict(decision) for decision in review_decisions],
+        "summary": _review_action_summary(review_decisions),
+    }
+    return json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
+
+
+def _format_review_markdown(notes: list[PerspectiveNote], review_decisions: list[ReviewDecision]) -> str:
+    return "\n\n".join(
+        [
+            _format_perspective_notes_markdown(notes).replace("# Perspective Notes", "# Raw Notes", 1),
+            _format_review_decisions_markdown(review_decisions),
+            _format_review_summary_markdown(_review_action_summary(review_decisions)),
+        ]
+    )
+
+
+def _build_cards_for_question(args: argparse.Namespace) -> tuple[
+    QuestionCard,
+    list[KnowledgeCard],
+    list[VariableCard],
+    list[ControversyCard],
+    list[AxisCard],
+]:
+    question_card = normalize_question(args.question)
+    knowledge_cards = [] if args.skip_knowledge else generate_knowledge_cards(question_card)
+    variable_cards = [] if args.skip_variables else generate_variable_cards(question_card)
+    controversy_cards = [] if args.skip_controversies else generate_controversy_cards(question_card)
+    axis_cards = generate_axes(
+        question_card,
+        knowledge_cards=knowledge_cards,
+        variable_cards=variable_cards,
+        controversy_cards=controversy_cards,
+    )
+    return question_card, knowledge_cards, variable_cards, controversy_cards, axis_cards
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the perspective extractor CLI."""
 
@@ -332,16 +448,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "axes":
-        question_card = normalize_question(args.question)
-        knowledge_cards = [] if args.skip_knowledge else generate_knowledge_cards(question_card)
-        variable_cards = [] if args.skip_variables else generate_variable_cards(question_card)
-        controversy_cards = [] if args.skip_controversies else generate_controversy_cards(question_card)
-        axis_cards = generate_axes(
-            question_card,
-            knowledge_cards=knowledge_cards,
-            variable_cards=variable_cards,
-            controversy_cards=controversy_cards,
-        )
+        question_card, knowledge_cards, variable_cards, controversy_cards, axis_cards = _build_cards_for_question(args)
         if args.format == "json":
             print(
                 _format_axes_json(
@@ -365,16 +472,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "expand":
-        question_card = normalize_question(args.question)
-        knowledge_cards = [] if args.skip_knowledge else generate_knowledge_cards(question_card)
-        variable_cards = [] if args.skip_variables else generate_variable_cards(question_card)
-        controversy_cards = [] if args.skip_controversies else generate_controversy_cards(question_card)
-        axis_cards = generate_axes(
-            question_card,
-            knowledge_cards=knowledge_cards,
-            variable_cards=variable_cards,
-            controversy_cards=controversy_cards,
-        )
+        question_card, knowledge_cards, variable_cards, controversy_cards, axis_cards = _build_cards_for_question(args)
         perspective_notes = expand_axes(
             axis_cards,
             question_card,
@@ -386,6 +484,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(_format_perspective_notes_markdown(perspective_notes))
         else:
             print(_format_perspective_notes_json(perspective_notes))
+        return 0
+
+    if args.command == "review":
+        question_card, knowledge_cards, variable_cards, controversy_cards, axis_cards = _build_cards_for_question(args)
+        perspective_notes = expand_axes(
+            axis_cards,
+            question_card,
+            knowledge_cards=knowledge_cards,
+            variable_cards=variable_cards,
+            controversy_cards=controversy_cards,
+        )
+        review_decisions = review_notes(question_card, perspective_notes)
+        if args.format == "markdown":
+            print(_format_review_markdown(perspective_notes, review_decisions))
+        else:
+            print(_format_review_json(perspective_notes, review_decisions))
         return 0
 
     pipeline = PerspectiveExtractionPipeline()

@@ -91,6 +91,47 @@ class AxesCliTests(unittest.TestCase):
 
 
 
+class ReviewCliTests(unittest.TestCase):
+    def test_review_defaults_to_json_with_raw_notes_decisions_and_summary(self) -> None:
+        buffer = io.StringIO()
+
+        with redirect_stdout(buffer):
+            exit_code = cli.main(["review", "How does remote work affect employee productivity?"])
+
+        payload = json.loads(buffer.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertIn("raw_notes", payload)
+        self.assertIn("review_decisions", payload)
+        self.assertIn("summary", payload)
+        self.assertGreaterEqual(len(payload["raw_notes"]), 8)
+        self.assertEqual(len(payload["review_decisions"]), len(payload["raw_notes"]))
+        self.assertEqual(payload["summary"]["total"], len(payload["review_decisions"]))
+        self.assertTrue({"kept", "merged", "rewritten", "dropped"} <= set(payload["summary"]))
+
+    def test_review_markdown_includes_raw_notes_decisions_and_summary_sections(self) -> None:
+        buffer = io.StringIO()
+
+        with redirect_stdout(buffer):
+            exit_code = cli.main(
+                [
+                    "review",
+                    "How does remote work affect employee productivity?",
+                    "--format",
+                    "markdown",
+                ]
+            )
+
+        output = buffer.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("# Raw Notes", output)
+        self.assertIn("# Review Decisions", output)
+        self.assertIn("# Review Summary", output)
+        self.assertIn("**kept:**", output)
+        self.assertIn("**merged:**", output)
+        self.assertIn("**rewritten:**", output)
+        self.assertIn("**dropped:**", output)
+
+
 class ExpandCliTests(unittest.TestCase):
     def test_expand_defaults_to_raw_json_perspective_note_list(self) -> None:
         buffer = io.StringIO()
