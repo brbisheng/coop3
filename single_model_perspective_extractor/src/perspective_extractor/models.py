@@ -263,6 +263,7 @@ class ReviewDecision:
     reason: str
     decision_id: str = field(default_factory=lambda: _make_id("decision"))
     merge_target_note_id: str | None = None
+    verification_question: str | None = None
 
     def __post_init__(self) -> None:
         self.decision_id = _require_text(self.decision_id, "decision_id")
@@ -273,6 +274,9 @@ class ReviewDecision:
             raise ValueError(f"action must be one of: {allowed}")
         self.merge_target_note_id = (
             self.merge_target_note_id.strip() if self.merge_target_note_id else None
+        )
+        self.verification_question = (
+            self.verification_question.strip() if self.verification_question else None
         )
         if self.action == "merge" and not self.merge_target_note_id:
             raise ValueError("merge_target_note_id is required when action='merge'")

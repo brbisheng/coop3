@@ -19,6 +19,7 @@ class ReviewNotesTests(unittest.TestCase):
             PerspectiveNote(
                 note_id="note_keep",
                 axis_id="axis_1",
+                verification_question="Which evidence would show that commute relief and longer focus blocks, rather than simple worker selection, explain productivity gains under remote work?",
                 core_claim=(
                     "Remote work improves employee productivity when it reduces commute fatigue and preserves long focus blocks."
                 ),
@@ -38,6 +39,7 @@ class ReviewNotesTests(unittest.TestCase):
             PerspectiveNote(
                 note_id="note_merge",
                 axis_id="axis_2",
+                verification_question="Which evidence would show that commute relief and longer focus blocks, rather than simple worker selection, explain productivity gains under remote work?",
                 core_claim=(
                     "Remote work improves employee productivity by reducing commute fatigue and preserving long focus blocks."
                 ),
@@ -58,6 +60,7 @@ class ReviewNotesTests(unittest.TestCase):
             PerspectiveNote(
                 note_id="note_drop",
                 axis_id="axis_3",
+                verification_question="Which evidence would show that commute relief and longer focus blocks, rather than simple worker selection, explain productivity gains under remote work?",
                 core_claim=(
                     "Remote work improves employee productivity when it reduces commute fatigue and preserves long focus blocks."
                 ),
@@ -77,6 +80,7 @@ class ReviewNotesTests(unittest.TestCase):
             PerspectiveNote(
                 note_id="note_distinct",
                 axis_id="axis_4",
+                verification_question="Which evidence would show that coordination breakdowns and manager visibility loss, rather than commute effects, explain remote-work productivity declines?",
                 core_claim=(
                     "Remote work can reduce employee productivity when managers lose visibility and coordination routines weaken."
                 ),
@@ -96,6 +100,7 @@ class ReviewNotesTests(unittest.TestCase):
             PerspectiveNote(
                 note_id="note_rewrite",
                 axis_id="axis_5",
+                verification_question="What evidence matters here?",
                 core_claim="Remote work matters in some cases.",
                 reasoning="This note is intentionally vague.",
                 counterexample="Sometimes other factors matter.",
@@ -117,10 +122,43 @@ class ReviewNotesTests(unittest.TestCase):
 
         for note_id, decision in actions.items():
             self.assertTrue(decision.reason, note_id)
+            self.assertTrue(decision.verification_question, note_id)
 
-        self.assertIn("claim", actions["note_merge"].reason)
-        self.assertIn("evidence_needed", actions["note_drop"].reason)
+        self.assertEqual(
+            actions["note_merge"].verification_question,
+            notes[1].verification_question,
+        )
+        self.assertIn("verification question is substantively the same", actions["note_merge"].reason)
+        self.assertIn("verification_question", actions["note_drop"].reason)
         self.assertIn("generic", actions["note_rewrite"].reason)
+
+    def test_review_notes_derives_missing_verification_question_for_downstream_use(self) -> None:
+        note = PerspectiveNote(
+            note_id="note_missing_verification",
+            axis_id="axis_x",
+            core_claim=(
+                "Remote work changes productivity mainly when employees can turn recovered commute time into uninterrupted focus blocks."
+            ),
+            reasoning="This note leaves verification_question blank to exercise review-time generation.",
+            counterexample=(
+                "A counterexample is a team with strong office-based mentoring needs, where remote work costs more coordination than it saves in focus time."
+            ),
+            evidence_needed=[
+                "Compare productivity and uninterrupted focus time before and after remote adoption.",
+                "Test whether employees with longer baseline commutes gain more output under remote work.",
+            ],
+            testable_implication=(
+                "If commute relief is decisive, employees with longer pre-remote commutes should show larger productivity gains after shifting remote."
+            ),
+            supporting_card_ids=["knowledge_commute"],
+        )
+
+        decisions = review_notes(self.question_card, [note])
+
+        self.assertEqual(decisions[0].action, "keep")
+        self.assertTrue(note.verification_question)
+        self.assertEqual(decisions[0].verification_question, note.verification_question)
+        self.assertIn("commute", decisions[0].verification_question.lower())
 
 
 if __name__ == "__main__":
