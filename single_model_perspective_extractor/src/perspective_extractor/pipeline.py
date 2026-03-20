@@ -22,7 +22,7 @@ from .knowledge import (
     generate_knowledge_cards,
     generate_variable_cards,
 )
-from .review import review_records
+from .review import review_notes as review_note_decisions, review_records
 from .synthesize import synthesize_summary
 from .axes import generate_axes
 from .expand import expand_axis as expand_axis_note
@@ -159,17 +159,10 @@ def expand_axes(
     return perspective_notes
 
 
-def review_notes(notes: list[PerspectiveNote]) -> list[ReviewDecision]:
-    """Return a keep decision for each note until richer review logic lands."""
+def review_notes(question_card: QuestionCard, notes: list[PerspectiveNote]) -> list[ReviewDecision]:
+    """Review expanded notes for overlap, novelty, and rewrite needs."""
 
-    return [
-        ReviewDecision(
-            target_note_id=note.note_id,
-            action="keep",
-            reason="Retained as a distinct scaffolded perspective note.",
-        )
-        for note in notes
-    ]
+    return review_note_decisions(question_card, notes)
 
 
 def build_perspective_map(
@@ -219,7 +212,7 @@ def run_pipeline(question: str) -> PipelineResult:
         controversy_cards=controversy_cards,
     )
 
-    review_decisions = review_notes(perspective_notes)
+    review_decisions = review_notes(question_card, perspective_notes)
     kept_note_ids = {decision.target_note_id for decision in review_decisions if decision.action == "keep"}
     kept_notes = [note for note in perspective_notes if note.note_id in kept_note_ids]
     perspective_map = build_perspective_map(
