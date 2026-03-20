@@ -21,3 +21,8 @@ single-model pipeline. The package namespace is `perspective_extractor`.
 - `synthesize.py`: synthesis stage
 - `pipeline.py`: end-to-end orchestration
 - `cli.py`: command-line entry point
+
+## CLI
+
+- `perspective-extractor normalize "..."`: emits a stable JSON representation of the normalized question card by default.
+- `perspective-extractor normalize "..." --format markdown`: emits a human-readable markdown summary while preserving `--format json` as the stable machine-readable mode.
