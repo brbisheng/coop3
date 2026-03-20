@@ -26,3 +26,5 @@ single-model pipeline. The package namespace is `perspective_extractor`.
 
 - `perspective-extractor normalize "..."`: emits a stable JSON representation of the normalized question card by default.
 - `perspective-extractor normalize "..." --format markdown`: emits a human-readable markdown summary while preserving `--format json` as the stable machine-readable mode.
+- `perspective-extractor axes "..."`: emits a readable markdown report containing the `QuestionCard`, optional knowledge / variable / controversy cards, and the generated `AxisCard` list.
+- `perspective-extractor axes "..." --format json`: emits the same card collections in JSON, while `--skip-knowledge`, `--skip-variables`, and `--skip-controversies` suppress optional supporting cards.
