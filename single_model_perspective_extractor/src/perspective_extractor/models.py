@@ -295,6 +295,7 @@ class PerspectiveMap:
     competing_perspectives: list[tuple[str, str]] = field(default_factory=list)
     compatible_perspectives: list[tuple[str, str]] = field(default_factory=list)
     evidence_contests: list[str] = field(default_factory=list)
+    boundary_cases: list[str] = field(default_factory=list)
     final_summary: str | None = None
 
     def __post_init__(self) -> None:
@@ -316,6 +317,7 @@ class PerspectiveMap:
             "compatible_perspectives item",
         )
         self.evidence_contests = _clean_string_list(self.evidence_contests)
+        self.boundary_cases = _clean_string_list(self.boundary_cases)
         self.final_summary = self.final_summary.strip() if self.final_summary else None
 
 

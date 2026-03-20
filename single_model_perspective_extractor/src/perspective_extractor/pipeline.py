@@ -23,7 +23,7 @@ from .knowledge import (
     generate_variable_cards,
 )
 from .review import review_notes as review_note_decisions, review_records
-from .synthesize import synthesize_summary
+from .synthesize import synthesize_map, synthesize_summary
 from .axes import generate_axes
 from .expand import expand_axis as expand_axis_note
 
@@ -168,25 +168,11 @@ def review_notes(question_card: QuestionCard, notes: list[PerspectiveNote]) -> l
 def build_perspective_map(
     question_card: QuestionCard,
     kept_notes: list[PerspectiveNote],
-    controversy_cards: list[ControversyCard] | None = None,
+    review_decisions: list[ReviewDecision],
 ) -> PerspectiveMap:
     """Assemble the final perspective map from reviewed notes."""
 
-    competing_pairs: list[tuple[str, str]] = []
-    evidence_contests: list[str] = []
-    controversy_cards = controversy_cards or []
-    if len(kept_notes) >= 2:
-        competing_pairs.append((kept_notes[0].note_id, kept_notes[1].note_id))
-    for card in controversy_cards:
-        evidence_contests.extend(card.evidence_contests)
-
-    return PerspectiveMap(
-        question_id=question_card.question_id,
-        kept_notes=kept_notes,
-        competing_perspectives=competing_pairs,
-        evidence_contests=evidence_contests,
-        final_summary=f"Generated {len(kept_notes)} kept perspective notes for {question_card.cleaned_question}",
-    )
+    return synthesize_map(question_card, kept_notes, review_decisions)
 
 
 def run_pipeline(question: str) -> PipelineResult:
@@ -218,7 +204,7 @@ def run_pipeline(question: str) -> PipelineResult:
     perspective_map = build_perspective_map(
         question_card,
         kept_notes,
-        controversy_cards=controversy_cards,
+        review_decisions=review_decisions,
     )
 
     return PipelineResult(
