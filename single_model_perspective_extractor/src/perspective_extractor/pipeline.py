@@ -25,6 +25,7 @@ from .knowledge import (
 from .review import review_records
 from .synthesize import synthesize_summary
 from .axes import generate_axes
+from .expand import expand_axis as expand_axis_note
 
 
 def _card_id(card: KnowledgeCard | VariableCard | ControversyCard) -> str:
@@ -82,56 +83,19 @@ def expand_axis(
     variable_cards: list[VariableCard] | None = None,
     controversy_cards: list[ControversyCard] | None = None,
 ) -> list[PerspectiveNote]:
-    """Expand one axis into a small set of traceable perspective notes."""
+    """Expand one axis into an isolated traceable perspective note."""
 
-    actor = question_card.actor_entity or "the focal actor"
-    outcome = question_card.outcome_variable or "the focal outcome"
-    support_ids = list(axis_card.supporting_card_ids)
-    support_summary = _summarize_supporting_cards(
-        knowledge_cards=knowledge_cards,
-        variable_cards=variable_cards,
-        controversy_cards=controversy_cards,
-    )
-    trace_text = "; ".join(support_summary) if support_summary else "no auxiliary cards supplied"
-
-    notes = [
-        PerspectiveNote(
-            axis_id=axis_card.axis_id,
-            core_claim=f"The {axis_card.name} axis suggests one explanation for how {actor} relates to {outcome}.",
-            reasoning=(
-                f"This note stays within the {axis_card.axis_type} lens and uses traceable support from {trace_text}."
-            ),
-            boundary_condition="Interpretation may change when population, setting, or timeframe shifts.",
-            evidence_needed=[
-                f"Evidence that directly speaks to the {axis_card.name} axis.",
-                *[f"Support card {card_id}" for card_id in support_ids[:3]],
-            ],
-            testable_implication=f"If this {axis_card.name} perspective is right, observed patterns in {outcome} should differ across the axis focus.",
-            verification_question=f"What evidence would confirm or falsify the {axis_card.name} perspective?",
-            supporting_card_ids=support_ids,
-        )
+    context_cards: list[KnowledgeCard | VariableCard | ControversyCard] = [
+        *(knowledge_cards or []),
+        *(variable_cards or []),
+        *(controversy_cards or []),
     ]
-
-    if controversy_cards:
-        notes.append(
-            PerspectiveNote(
-                axis_id=axis_card.axis_id,
-                core_claim=f"A competing perspective on {axis_card.name} emphasizes disagreement rather than consensus.",
-                reasoning=(
-                    f"This alternative note foregrounds contested explanations for {actor} and {outcome} while preserving the same support trace."
-                ),
-                counterexample="A different causal story may fit the same observations if scope conditions change.",
-                evidence_needed=[
-                    "Evidence that distinguishes competing explanations.",
-                    *[f"Support card {card_id}" for card_id in support_ids[:3]],
-                ],
-                verification_question="Which observations would favor one competing explanation over another?",
-                competing_perspectives=[axis_card.name],
-                supporting_card_ids=support_ids,
-            )
-        )
-
-    return notes
+    note = expand_axis_note(
+        question_card,
+        axis_card,
+        context_cards=context_cards,
+    )
+    return [note]
 
 
 def review_notes(notes: list[PerspectiveNote]) -> list[ReviewDecision]:
