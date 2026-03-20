@@ -16,12 +16,13 @@ from .models import (
     KnowledgeCard,
     PerspectiveNote,
     PipelineInput,
+    PipelineResult,
     QuestionCard,
     ReviewDecision,
     VariableCard,
 )
 from .normalize import normalize_question
-from .pipeline import PerspectiveExtractionPipeline, expand_axes, review_notes
+from .pipeline import PerspectiveExtractionPipeline, expand_axes, review_notes, run_pipeline
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -121,6 +122,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--skip-controversies",
         action="store_true",
         help="Do not generate or use controversy cards during review.",
+    )
+
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Run the full pipeline and emit the complete structured trace.",
+    )
+    run_parser.add_argument("question", help="Question text to run through the full pipeline.")
+    run_parser.add_argument(
+        "--format",
+        choices=("json", "markdown"),
+        default="json",
+        help="Output format. JSON remains the stable primary output preserving all intermediate objects.",
     )
 
     return parser
@@ -413,6 +426,24 @@ def _format_review_markdown(notes: list[PerspectiveNote], review_decisions: list
     )
 
 
+def _format_pipeline_result_json(result: PipelineResult) -> str:
+    return json.dumps(asdict(result), indent=2, ensure_ascii=False, sort_keys=True)
+
+
+def _format_pipeline_result_markdown(result: PipelineResult) -> str:
+    sections = [
+        "# Pipeline Run",
+        "",
+        "## JSON Export",
+        "JSON is the stable machine-readable primary output for `perspective-extractor run`.",
+        "",
+        "```json",
+        _format_pipeline_result_json(result),
+        "```",
+    ]
+    return "\n".join(sections)
+
+
 def _build_cards_for_question(args: argparse.Namespace) -> tuple[
     QuestionCard,
     list[KnowledgeCard],
@@ -500,6 +531,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(_format_review_markdown(perspective_notes, review_decisions))
         else:
             print(_format_review_json(perspective_notes, review_decisions))
+        return 0
+
+    if args.command == "run":
+        result = run_pipeline(args.question)
+        if args.format == "markdown":
+            print(_format_pipeline_result_markdown(result))
+        else:
+            print(_format_pipeline_result_json(result))
         return 0
 
     pipeline = PerspectiveExtractionPipeline()

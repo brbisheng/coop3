@@ -147,3 +147,50 @@ class ExpandCliTests(unittest.TestCase):
         self.assertIn("axis_id", payload[0])
         self.assertEqual(payload[0]["note_id"], payload[0]["axis_id"].replace("axis_", "note_", 1))
 
+
+class RunCliTests(unittest.TestCase):
+    def test_run_defaults_to_json_with_full_pipeline_trace(self) -> None:
+        buffer = io.StringIO()
+
+        with redirect_stdout(buffer):
+            exit_code = cli.main(["run", "How does remote work affect employee productivity?"])
+
+        payload = json.loads(buffer.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertIn("question_card", payload)
+        self.assertIn("knowledge_cards", payload)
+        self.assertIn("variable_cards", payload)
+        self.assertIn("controversy_cards", payload)
+        self.assertIn("axis_cards", payload)
+        self.assertIn("perspective_notes", payload)
+        self.assertIn("review_decisions", payload)
+        self.assertIn("kept_notes", payload)
+        self.assertIn("merged_notes", payload)
+        self.assertIn("rewrite_notes", payload)
+        self.assertIn("dropped_notes", payload)
+        self.assertIn("perspective_map", payload)
+        self.assertGreaterEqual(len(payload["axis_cards"]), 8)
+        self.assertEqual(len(payload["review_decisions"]), len(payload["perspective_notes"]))
+        self.assertIsNotNone(payload["perspective_map"])
+        self.assertIn("final_summary", payload["perspective_map"])
+
+    def test_run_markdown_wraps_the_stable_json_export(self) -> None:
+        buffer = io.StringIO()
+
+        with redirect_stdout(buffer):
+            exit_code = cli.main(
+                [
+                    "run",
+                    "How does remote work affect employee productivity?",
+                    "--format",
+                    "markdown",
+                ]
+            )
+
+        output = buffer.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("# Pipeline Run", output)
+        self.assertIn("## JSON Export", output)
+        self.assertIn("```json", output)
+        self.assertIn('"question_card"', output)
+        self.assertIn('"perspective_map"', output)
