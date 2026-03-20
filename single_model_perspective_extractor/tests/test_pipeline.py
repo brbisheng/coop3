@@ -6,6 +6,7 @@ from perspective_extractor.models import (
     ControversyCard,
     KnowledgeCard,
     PerspectiveNote,
+    ReviewDecision,
     PipelineResult,
     QuestionCard,
     VariableCard,
@@ -218,6 +219,79 @@ class PipelineFlowTests(unittest.TestCase):
         )
         self.assertEqual([note.note_id for note in notes], ["note_custom_one", "note_custom_two"])
         self.assertEqual([note.axis_id for note in notes], ["axis_custom_one", "axis_custom_two"])
+
+    def test_run_pipeline_returns_review_partitions_for_debugging(self) -> None:
+        question_card = QuestionCard(
+            raw_question="How does remote work affect employee productivity?",
+            cleaned_question="How does remote work affect employee productivity?",
+            actor_entity="remote work",
+            outcome_variable="employee productivity",
+            domain_hint="business",
+        )
+        axis_cards = [
+            AxisCard(
+                name="framing lens",
+                axis_type="framing",
+                focus="focus one",
+                how_is_it_distinct="distinct one",
+                axis_id="axis_keep",
+            ),
+            AxisCard(
+                name="measurement lens",
+                axis_type="measurement",
+                focus="focus two",
+                how_is_it_distinct="distinct two",
+                axis_id="axis_merge",
+            ),
+            AxisCard(
+                name="scope lens",
+                axis_type="scope",
+                focus="focus three",
+                how_is_it_distinct="distinct three",
+                axis_id="axis_rewrite",
+            ),
+            AxisCard(
+                name="boundary lens",
+                axis_type="boundary",
+                focus="focus four",
+                how_is_it_distinct="distinct four",
+                axis_id="axis_drop",
+            ),
+        ]
+        notes = [
+            PerspectiveNote(axis_id="axis_keep", note_id="note_keep", core_claim="claim keep", reasoning="reasoning"),
+            PerspectiveNote(axis_id="axis_merge", note_id="note_merge", core_claim="claim merge", reasoning="reasoning"),
+            PerspectiveNote(axis_id="axis_rewrite", note_id="note_rewrite", core_claim="claim rewrite", reasoning="reasoning"),
+            PerspectiveNote(axis_id="axis_drop", note_id="note_drop", core_claim="claim drop", reasoning="reasoning"),
+        ]
+        review_decisions = [
+            ReviewDecision(target_note_id="note_keep", action="keep", reason="distinct"),
+            ReviewDecision(
+                target_note_id="note_merge",
+                action="merge",
+                reason="near duplicate",
+                merge_target_note_id="note_keep",
+            ),
+            ReviewDecision(target_note_id="note_rewrite", action="rewrite", reason="needs specificity"),
+            ReviewDecision(target_note_id="note_drop", action="drop", reason="no unique contribution"),
+        ]
+
+        with (
+            patch("perspective_extractor.pipeline.normalize_question", return_value=question_card),
+            patch("perspective_extractor.pipeline.generate_knowledge_cards", return_value=[]),
+            patch("perspective_extractor.pipeline.generate_variable_cards", return_value=[]),
+            patch("perspective_extractor.pipeline.generate_controversy_cards", return_value=[]),
+            patch("perspective_extractor.pipeline.generate_axes", return_value=axis_cards),
+            patch("perspective_extractor.pipeline.expand_axes", return_value=notes),
+            patch("perspective_extractor.pipeline.review_notes", return_value=review_decisions),
+        ):
+            result = run_pipeline(question_card.raw_question)
+
+        self.assertEqual([note.note_id for note in result.kept_notes], ["note_keep"])
+        self.assertEqual([note.note_id for note in result.merged_notes], ["note_merge"])
+        self.assertEqual([note.note_id for note in result.rewrite_notes], ["note_rewrite"])
+        self.assertEqual([note.note_id for note in result.dropped_notes], ["note_drop"])
+        self.assertEqual([note.note_id for note in result.perspective_map.kept_notes], ["note_keep"])
 
 
 if __name__ == "__main__":

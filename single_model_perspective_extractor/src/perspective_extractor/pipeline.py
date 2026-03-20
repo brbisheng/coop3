@@ -175,8 +175,36 @@ def build_perspective_map(
     return synthesize_map(question_card, kept_notes, review_decisions)
 
 
+def _partition_notes_by_review_action(
+    notes: list[PerspectiveNote],
+    review_decisions: list[ReviewDecision],
+) -> dict[str, list[PerspectiveNote]]:
+    """Group expanded notes by review action for debug-friendly pipeline output."""
+
+    note_lookup = {note.note_id: note for note in notes}
+    grouped_notes: dict[str, list[PerspectiveNote]] = {
+        "keep": [],
+        "merge": [],
+        "rewrite": [],
+        "drop": [],
+    }
+
+    for decision in review_decisions:
+        note = note_lookup.get(decision.target_note_id)
+        if note is None:
+            continue
+        grouped_notes[decision.action].append(note)
+
+    return grouped_notes
+
+
 def run_pipeline(question: str) -> PipelineResult:
-    """Run the structured perspective-extraction pipeline for one question."""
+    """Run the full structured perspective-extraction pipeline for one question.
+
+    The returned ``PipelineResult`` preserves the full stage-by-stage trace:
+    normalized question, support cards, axis cards, raw notes, review decisions,
+    action-specific note partitions, and the synthesized final map.
+    """
 
     question_card = normalize_question(question)
     knowledge_cards = generate_knowledge_cards(question_card)
@@ -199,8 +227,8 @@ def run_pipeline(question: str) -> PipelineResult:
     )
 
     review_decisions = review_notes(question_card, perspective_notes)
-    kept_note_ids = {decision.target_note_id for decision in review_decisions if decision.action == "keep"}
-    kept_notes = [note for note in perspective_notes if note.note_id in kept_note_ids]
+    notes_by_action = _partition_notes_by_review_action(perspective_notes, review_decisions)
+    kept_notes = notes_by_action["keep"]
     perspective_map = build_perspective_map(
         question_card,
         kept_notes,
@@ -215,6 +243,10 @@ def run_pipeline(question: str) -> PipelineResult:
         controversy_cards=controversy_cards,
         perspective_notes=perspective_notes,
         review_decisions=review_decisions,
+        kept_notes=kept_notes,
+        merged_notes=notes_by_action["merge"],
+        rewrite_notes=notes_by_action["rewrite"],
+        dropped_notes=notes_by_action["drop"],
         perspective_map=perspective_map,
     )
 
