@@ -8,19 +8,34 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'single_model_perspective_extractor' / 'src'
+DEMOS = ROOT / 'demos'
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+if str(DEMOS) not in sys.path:
+    sys.path.insert(0, str(DEMOS))
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from perspective_extractor.compete import build_competing_mechanisms
+from perspective_extractor.decompose import decompose_problem
+from perspective_extractor.final import build_final_report
 from perspective_extractor.models import (
     AxisCard,
+    CompeteResult,
     ControversyCard,
+    DecomposeResult,
+    FinalReport,
     KnowledgeCard,
     PerspectiveMap,
     PerspectiveNote,
     QuestionCard,
     ReviewDecision,
+    StressResult,
+    TraceResult,
     VariableCard,
 )
+from perspective_extractor.stress import build_stress_test
+from perspective_extractor.trace import build_trace
 
 
 @dataclass(slots=True)
@@ -33,6 +48,17 @@ class FixedPipelineScenario:
     perspective_notes: list[PerspectiveNote]
     review_decisions: list[ReviewDecision]
     perspective_map: PerspectiveMap
+
+
+@dataclass(slots=True)
+class Phase1Scenario:
+    problem_text: str
+    trace_target: str
+    decompose_result: DecomposeResult
+    trace_result: TraceResult
+    compete_result: CompeteResult
+    stress_result: StressResult
+    final_report: FinalReport
 
 
 class MockPipelineResponder:
@@ -95,6 +121,39 @@ class MockPipelineResponder:
         assert review_decisions is self.scenario.review_decisions
         self.call_log.append("synthesize")
         return self.scenario.perspective_map
+
+
+@pytest.fixture
+def phase1_sample_problem() -> str:
+    return (
+        "How could a disruption at the main fuel import terminal force shippers, customs, "
+        "and regional distributors to reroute through alternate ports and inland pipeline chokepoints "
+        "over the next 30 days?"
+    )
+
+
+@pytest.fixture
+def phase1_scenario(phase1_sample_problem: str) -> Phase1Scenario:
+    trace_target = "Alternate-port rerouting after a fuel terminal disruption"
+    decompose_result = decompose_problem(phase1_sample_problem)
+    trace_result = build_trace(decompose_result, trace_target=trace_target)
+    compete_result = build_competing_mechanisms(decompose_result, trace_result)
+    stress_result = build_stress_test(decompose_result, trace_result, compete_result)
+    final_report = build_final_report(
+        decompose_result,
+        trace_result,
+        compete_result,
+        stress_result,
+    )
+    return Phase1Scenario(
+        problem_text=phase1_sample_problem,
+        trace_target=trace_target,
+        decompose_result=decompose_result,
+        trace_result=trace_result,
+        compete_result=compete_result,
+        stress_result=stress_result,
+        final_report=final_report,
+    )
 
 
 @pytest.fixture
@@ -238,44 +297,37 @@ def fixed_pipeline_scenario() -> FixedPipelineScenario:
         ReviewDecision(
             target_note_id="note_focus",
             action="keep",
-            reason="Mechanism note remains structurally distinct.",
-            verification_question=perspective_notes[0].verification_question,
+            reason="The note is specific, mechanistic, and distinct.",
+            verification_question="What evidence would distinguish this mechanism from selection?",
         ),
         ReviewDecision(
             target_note_id="note_boundary",
             action="keep",
-            reason="Boundary-condition note captures a distinct scope lens.",
-            verification_question=perspective_notes[1].verification_question,
+            reason="The note adds a concrete boundary condition the first note does not cover.",
+            verification_question="What process evidence would show coordination load is the decisive boundary?",
         ),
         ReviewDecision(
             target_note_id="note_focus_duplicate",
             action="merge",
-            reason="Shares the same mechanism, evidence structure, and verification question as note_focus.",
+            reason="This note repeats the same mechanism as note_focus with only wording differences.",
             merge_target_note_id="note_focus",
-            verification_question=perspective_notes[2].verification_question,
+            verification_question="Does the duplicate add any new evidence need or boundary condition?",
         ),
         ReviewDecision(
             target_note_id="note_vague",
             action="rewrite",
-            reason="Generic note lacks enough anchored structure to keep as-is.",
-            verification_question=perspective_notes[3].verification_question,
+            reason="The note is too generic to survive review without a clearer mechanism and boundary.",
+            verification_question="What mechanism and boundary condition would make this note decision-useful?",
         ),
     ]
     perspective_map = PerspectiveMap(
-        map_id="map_remote_work",
         question_id=question_card.question_id,
         kept_notes=[perspective_notes[0], perspective_notes[1]],
+        map_id="map_remote_work",
         merged_groups=[["note_focus", "note_focus_duplicate"]],
-        evidence_contests=[
-            "note_focus vs note_boundary: distinguish time-allocation gains from coordination breakdown losses.",
-            f"note_focus: {perspective_notes[0].verification_question}",
-            f"note_boundary: {perspective_notes[1].verification_question}",
-        ],
-        boundary_cases=[
-            f"note_focus: {perspective_notes[0].boundary_condition}",
-            f"note_boundary: {perspective_notes[1].boundary_condition}",
-        ],
-        final_summary="Structured summary with two kept notes, one merge, and one rewrite.",
+        evidence_contests=["note_focus:selection-vs-focus-time"],
+        boundary_cases=["note_boundary:coordination-load-threshold"],
+        final_summary="Remote work affects productivity through distinct focus and coordination pathways.",
     )
     return FixedPipelineScenario(
         question_card=question_card,

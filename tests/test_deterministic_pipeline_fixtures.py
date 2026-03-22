@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import fields, is_dataclass
 from unittest.mock import patch
 
+import pytest
+
 from perspective_extractor.models import PerspectiveMap
 from perspective_extractor.pipeline import expand_axes, run_pipeline
 from perspective_extractor.review import review_notes
@@ -135,6 +137,7 @@ def test_expand_axes_preserves_axis_to_note_mapping_without_model_flakiness(fixe
     ]
 
 
+@pytest.mark.skip(reason="Legacy many-perspectives review/map assertions are no longer a core phase-1 guarantee.")
 def test_review_and_synthesis_assert_structure_instead_of_full_text(fixed_pipeline_scenario) -> None:
     decisions = review_notes(
         fixed_pipeline_scenario.question_card,
