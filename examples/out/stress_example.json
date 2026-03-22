@@ -1,0 +1,38 @@
+{
+  "falsification_ledger": [
+    {
+      "claim_under_stress": "If mechanism A is right, conditions should improve quickly once alternate ports regains workable throughput or the most binding part of 'Physical throughput or congestion limits' is relaxed",
+      "hidden_assumption": "The main constraint really is concentrated at alternate ports rather than being displaced into substitute actors, nodes, or decision processes",
+      "how_it_could_fail": "Physical throughput or congestion limits or a closely related bottleneck remains binding outside alternate ports, so nominal recovery at the focal node does not translate into real system recovery",
+      "what_evidence_would_break_it": "Evidence that downstream delays, shortages, or performance gaps remain elevated after measurable recovery at alternate ports would falsify the claim that direct throughput restoration is sufficient"
+    },
+    {
+      "claim_under_stress": "If mechanism B is right, downstream disruption should persist after alternate ports stabilizes because actors continue hoarding, reprioritizing, or mis-coordinating around the expected risk",
+      "hidden_assumption": "Actor behavior rather than direct capacity loss is doing most of the explanatory work, and customs is still reacting to expected risk rather than current conditions",
+      "how_it_could_fail": "Once the first-order bottleneck clears, the second- and third-order effects unwind quickly, showing that coordination frictions were secondary rather than dominant",
+      "what_evidence_would_break_it": "If substitute nodes decongest and exposed actors normalize behavior soon after the first-order shock eases, the expectation-and-coordination account loses force"
+    }
+  ],
+  "stress_id": "stress_740bbdb2fff0",
+  "surprise_ledger": [
+    {
+      "surprise": "A secondary node or actor outside alternate ports becomes the real bottleneck once attention and mitigation resources concentrate on the headline disruption",
+      "what_actor_or_node_it_depends_on": [
+        "alternate ports",
+        "customs",
+        "regional distributors",
+        "main fuel import terminal"
+      ],
+      "why_shallow_analysis_misses_it": "Shallow analysis stays fixed on the initial shock and underweights the way rerouting, substitution, and political attention can create a new constraint elsewhere"
+    },
+    {
+      "surprise": "An institutional or behavioral response from customs amplifies the third-order effects more than the physical disruption itself",
+      "what_actor_or_node_it_depends_on": [
+        "customs",
+        "alternate ports",
+        "regional distributors"
+      ],
+      "why_shallow_analysis_misses_it": "Surface-level tracing often assumes actors passively absorb shocks, even though defensive prioritization, compliance choices, or public signaling can magnify downstream consequences"
+    }
+  ]
+}

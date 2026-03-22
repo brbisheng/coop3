@@ -1,0 +1,98 @@
+{
+  "actor_cards": [
+    {
+      "actor_id": "actor_58c828ec5b96",
+      "goal_guess": "Maintain control, compliance, and acceptable risk while avoiding visible failure",
+      "name": "customs",
+      "role": "Sets or enforces rules that can accelerate, block, or reshape response options",
+      "type": "institution",
+      "why_relevant": "The problem statement directly names or strongly implies this actor as part of the causal picture."
+    },
+    {
+      "actor_id": "actor_fb019ccb8df1",
+      "goal_guess": "Preserve throughput, margins, and operational continuity",
+      "name": "regional distributors",
+      "role": "Operates the practical flow of goods, services, traffic, or information",
+      "type": "firm",
+      "why_relevant": "The problem statement directly names or strongly implies this actor as part of the causal picture."
+    },
+    {
+      "actor_id": "actor_65077464b4dc",
+      "goal_guess": "Preserve throughput, margins, and operational continuity",
+      "name": "shippers",
+      "role": "Operates the practical flow of goods, services, traffic, or information",
+      "type": "firm",
+      "why_relevant": "The problem statement directly names or strongly implies this actor as part of the causal picture."
+    }
+  ],
+  "constraint_cards": [
+    {
+      "applies_to": [
+        "customs",
+        "regional distributors",
+        "alternate ports",
+        "main fuel import terminal"
+      ],
+      "constraint": "Physical throughput or congestion limits",
+      "constraint_id": "constraint_3769f5e910e5",
+      "why_it_matters": "Physical throughput or congestion limits can determine whether customs can adapt around alternate ports or whether the bottleneck stays binding."
+    },
+    {
+      "applies_to": [
+        "customs",
+        "regional distributors",
+        "alternate ports",
+        "main fuel import terminal"
+      ],
+      "constraint": "Geographic or institutional scope is underspecified",
+      "constraint_id": "constraint_747827e014c0",
+      "why_it_matters": "Without a clear jurisdiction or operating area, it is easy to miss the real gatekeepers and facilities."
+    }
+  ],
+  "node_cards": [
+    {
+      "function": "Transfers flows between transport modes or between arrival and distribution systems",
+      "name": "alternate ports",
+      "node_id": "node_5d3741e49e3d",
+      "type": "facility",
+      "why_relevant": "This facility is a plausible place where pressure, substitution, or failure could become operationally visible in main fuel import terminal."
+    },
+    {
+      "function": "Transfers flows between transport modes or between arrival and distribution systems",
+      "name": "main fuel import terminal",
+      "node_id": "node_13183e221486",
+      "type": "facility",
+      "why_relevant": "This facility is a plausible place where pressure, substitution, or failure could become operationally visible in main fuel import terminal."
+    },
+    {
+      "function": "Carries traffic through a corridor where rerouting may be slow, costly, or impossible",
+      "name": "ports and inland pipeline",
+      "node_id": "node_7de2b46b75aa",
+      "type": "route",
+      "why_relevant": "This route is a plausible place where pressure, substitution, or failure could become operationally visible in main fuel import terminal."
+    },
+    {
+      "function": "Authorizes, clears, inspects, or allocates access at a critical decision point",
+      "name": "customs",
+      "node_id": "node_aae9bf6d621b",
+      "type": "institutional node",
+      "why_relevant": "This institutional node is a plausible place where pressure, substitution, or failure could become operationally visible in main fuel import terminal."
+    },
+    {
+      "function": "Transfers flows between transport modes or between arrival and distribution systems",
+      "name": "alternate ports and inland pipeline",
+      "node_id": "node_2e325235e207",
+      "type": "facility",
+      "why_relevant": "This facility is a plausible place where pressure, substitution, or failure could become operationally visible in main fuel import terminal."
+    }
+  ],
+  "problem_frame": {
+    "core_question": "How could a disruption at the main fuel import terminal force shippers, customs, and regional distributors to reroute through alternate ports and inland pipeline chokepoints over the next 30 days?",
+    "decision_or_analysis_target": "Clarify who matters, which nodes or chokepoints matter, and what constraints could dominate the outcome.",
+    "problem_frame_id": "problem_frame_49540790e11e",
+    "scope_notes": [
+      "Geographic or institutional scope is not explicit yet.",
+      "Success criteria or outcome metric should be specified more concretely."
+    ]
+  }
+}
