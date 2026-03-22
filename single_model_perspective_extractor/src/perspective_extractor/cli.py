@@ -1,554 +1,209 @@
-"""CLI entry point for the perspective extractor scaffold."""
+"""Standalone CLI entry point for the phase-1 reasoning stages."""
 
 from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter
+import sys
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any, Sequence
 
-from .axes import generate_axes
-from .knowledge import generate_controversy_cards, generate_knowledge_cards, generate_variable_cards
-from .models import (
-    AxisCard,
-    ControversyCard,
-    KnowledgeCard,
-    PerspectiveNote,
-    PipelineInput,
-    PipelineResult,
-    QuestionCard,
-    ReviewDecision,
-    VariableCard,
-)
-from .normalize import normalize_question
-from .pipeline import PerspectiveExtractionPipeline, expand_axes, review_notes, run_pipeline
+from .compete import build_competing_mechanisms
+from .decompose import decompose_problem
+from .final import build_final_report
+from .stress import build_stress_test
+from .trace import build_trace
+
+
+JsonDict = dict[str, Any]
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level CLI parser."""
 
-    parser = argparse.ArgumentParser(prog="perspective-extractor")
-    subparsers = parser.add_subparsers(dest="command")
+    parser = argparse.ArgumentParser(
+        prog="perspective-extractor",
+        description=(
+            "Run the dedicated phase-1 commands directly. Each command accepts plain "
+            "text or a text file, emits structured JSON, and can save its artifact "
+            "without depending on the unfinished wider system."
+        ),
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
-    normalize_parser = subparsers.add_parser(
-        "normalize",
-        help="Normalize a research question into a structured question card.",
+    decompose_parser = subparsers.add_parser(
+        "decompose",
+        help="Decompose a problem into actors, nodes, and constraints.",
     )
-    normalize_parser.add_argument("question", help="Question text to normalize.")
-    normalize_parser.add_argument(
-        "--format",
-        choices=("json", "markdown"),
-        default="json",
-        help="Output format. JSON remains the stable default output mode.",
-    )
+    _add_problem_input_arguments(decompose_parser)
+    _add_output_arguments(decompose_parser)
 
-    axes_parser = subparsers.add_parser(
-        "axes",
-        help="Generate question, supporting cards, and axis cards for a research question.",
+    trace_parser = subparsers.add_parser(
+        "trace",
+        help="Build an ordered consequence chain from a problem statement.",
     )
-    axes_parser.add_argument("question", help="Question text to expand into perspective axes.")
-    axes_parser.add_argument(
-        "--format",
-        choices=("json", "markdown"),
-        default="markdown",
-        help="Output format. Markdown is the readable default for axis inspection.",
+    _add_problem_input_arguments(trace_parser)
+    trace_parser.add_argument(
+        "--trace-target",
+        help="Optional explicit target to trace instead of the inferred default.",
     )
-    axes_parser.add_argument(
-        "--skip-knowledge",
-        action="store_true",
-        help="Do not generate or print knowledge cards.",
-    )
-    axes_parser.add_argument(
-        "--skip-variables",
-        action="store_true",
-        help="Do not generate or print variable cards.",
-    )
-    axes_parser.add_argument(
-        "--skip-controversies",
-        action="store_true",
-        help="Do not generate or print controversy cards.",
-    )
+    _add_output_arguments(trace_parser)
 
-    expand_parser = subparsers.add_parser(
-        "expand",
-        help="Generate raw PerspectiveNote records by expanding each axis independently.",
+    compete_parser = subparsers.add_parser(
+        "compete",
+        help="Generate two competing mechanisms with divergent predictions.",
     )
-    expand_parser.add_argument("question", help="Question text to expand into perspective notes.")
-    expand_parser.add_argument(
-        "--format",
-        choices=("json", "markdown"),
-        default="json",
-        help="Output format. JSON remains the stable default for raw PerspectiveNote output.",
+    _add_problem_input_arguments(compete_parser)
+    compete_parser.add_argument(
+        "--trace-target",
+        help="Optional explicit target to trace before building competing mechanisms.",
     )
-    expand_parser.add_argument(
-        "--skip-knowledge",
-        action="store_true",
-        help="Do not generate or use knowledge cards during expansion.",
-    )
-    expand_parser.add_argument(
-        "--skip-variables",
-        action="store_true",
-        help="Do not generate or use variable cards during expansion.",
-    )
-    expand_parser.add_argument(
-        "--skip-controversies",
-        action="store_true",
-        help="Do not generate or use controversy cards during expansion.",
-    )
+    _add_output_arguments(compete_parser)
 
-    review_parser = subparsers.add_parser(
-        "review",
-        help="Generate raw notes, review them, and print the review decisions plus summary stats.",
+    stress_parser = subparsers.add_parser(
+        "stress",
+        help="Stress-test the competing mechanisms with falsification and surprise ledgers.",
     )
-    review_parser.add_argument("question", help="Question text to review after note expansion.")
-    review_parser.add_argument(
-        "--format",
-        choices=("json", "markdown"),
-        default="json",
-        help="Output format. JSON remains the stable default for review output.",
+    _add_problem_input_arguments(stress_parser)
+    stress_parser.add_argument(
+        "--trace-target",
+        help="Optional explicit target to trace before stress-testing.",
     )
-    review_parser.add_argument(
-        "--skip-knowledge",
-        action="store_true",
-        help="Do not generate or use knowledge cards during review.",
-    )
-    review_parser.add_argument(
-        "--skip-variables",
-        action="store_true",
-        help="Do not generate or use variable cards during review.",
-    )
-    review_parser.add_argument(
-        "--skip-controversies",
-        action="store_true",
-        help="Do not generate or use controversy cards during review.",
-    )
+    _add_output_arguments(stress_parser)
 
-    run_parser = subparsers.add_parser(
-        "run",
-        help="Run the full pipeline and emit the complete structured trace.",
+    final_parser = subparsers.add_parser(
+        "final",
+        help="Assemble the dense final phase-1 report from direct stage execution.",
     )
-    run_parser.add_argument("question", help="Question text to run through the full pipeline.")
-    run_parser.add_argument(
-        "--format",
-        choices=("json", "markdown"),
-        default="json",
-        help="Output format. JSON remains the stable primary output preserving all intermediate objects.",
+    _add_problem_input_arguments(final_parser)
+    final_parser.add_argument(
+        "--trace-target",
+        help="Optional explicit target to trace before assembling the final report.",
     )
+    _add_output_arguments(final_parser)
 
     return parser
 
 
-def _format_question_card_json(question_card: QuestionCard) -> str:
-    return json.dumps(asdict(question_card), indent=2, ensure_ascii=False, sort_keys=True)
-
-
-def _format_question_card_markdown(question_card: QuestionCard) -> str:
-    sections = [
-        "# Normalized Question",
-        f"- **question_id:** `{question_card.question_id}`",
-        f"- **raw_question:** {question_card.raw_question}",
-        f"- **cleaned_question:** {question_card.cleaned_question}",
-        f"- **actor_entity:** {question_card.actor_entity or 'N/A'}",
-        f"- **outcome_variable:** {question_card.outcome_variable or 'N/A'}",
-        f"- **domain_hint:** {question_card.domain_hint or 'N/A'}",
-    ]
-
-    for title, values in (
-        ("Assumptions", question_card.assumptions),
-        ("Keywords", question_card.keywords),
-        ("Missing Pieces", question_card.missing_pieces),
-    ):
-        sections.append(f"\n## {title}")
-        if values:
-            sections.extend(f"- {value}" for value in values)
-        else:
-            sections.append("- None")
-
-    return "\n".join(sections)
-
-
-def _format_string_list(values: list[str]) -> list[str]:
-    if not values:
-        return ["- None"]
-    return [f"- {value}" for value in values]
-
-
-def _format_card_collection_markdown(
-    title: str,
-    cards: list[KnowledgeCard] | list[VariableCard] | list[ControversyCard],
-    formatter: Any,
-) -> list[str]:
-    sections = [f"## {title}"]
-    if not cards:
-        sections.append("- Disabled or none")
-        return sections
-
-    for index, card in enumerate(cards, start=1):
-        sections.extend(formatter(index, card))
-
-    return sections
-
-
-def _format_knowledge_card(index: int, card: KnowledgeCard) -> list[str]:
-    sections = [
-        f"### KnowledgeCard {index}: {card.title}",
-        f"- **knowledge_id:** `{card.knowledge_id}`",
-        f"- **content:** {card.content}",
-        f"- **source_type:** {card.source_type or 'N/A'}",
-        f"- **relevance:** {card.relevance or 'N/A'}",
-        f"- **verification_question:** {card.verification_question or 'N/A'}",
-        "- **evidence_needed:**",
-        *_format_string_list(card.evidence_needed),
-    ]
-    return sections
-
-
-def _format_variable_card(index: int, card: VariableCard) -> list[str]:
-    sections = [
-        f"### VariableCard {index}: {card.name}",
-        f"- **variable_id:** `{card.variable_id}`",
-        f"- **role:** {card.variable_role}",
-        f"- **definition:** {card.definition}",
-        f"- **measurement_notes:** {card.measurement_notes or 'N/A'}",
-        f"- **testable_implication:** {card.testable_implication or 'N/A'}",
-        f"- **verification_question:** {card.verification_question or 'N/A'}",
-        "- **possible_values:**",
-        *_format_string_list(card.possible_values),
-        "- **evidence_needed:**",
-        *_format_string_list(card.evidence_needed),
-    ]
-    return sections
-
-
-def _format_controversy_card(index: int, card: ControversyCard) -> list[str]:
-    sections = [
-        f"### ControversyCard {index}: {card.question}",
-        f"- **controversy_id:** `{card.controversy_id}`",
-        "- **sides:**",
-        *_format_string_list(card.sides),
-        "- **evidence_contests:**",
-        *_format_string_list(card.evidence_contests),
-        f"- **verification_question:** {card.verification_question or 'N/A'}",
-        "- **competing_perspectives:**",
-        *_format_string_list(card.competing_perspectives),
-        "- **compatible_perspectives:**",
-        *_format_string_list(card.compatible_perspectives),
-    ]
-    return sections
-
-
-def _format_axis_card(index: int, card: AxisCard) -> list[str]:
-    sections = [
-        f"### AxisCard {index}: {card.name}",
-        f"- **axis_id:** `{card.axis_id}`",
-        f"- **type:** {card.axis_type}",
-        f"- **priority:** {card.priority}",
-        f"- **focus:** {card.focus}",
-        f"- **distinctness:** {card.how_is_it_distinct}",
-        f"- **verification_question:** {card.verification_question or 'N/A'}",
-        "- **supporting_card_ids:**",
-        *_format_string_list(card.supporting_card_ids),
-        "- **evidence_needed:**",
-        *_format_string_list(card.evidence_needed),
-    ]
-    return sections
-
-
-def _format_axes_markdown(
-    *,
-    question_card: QuestionCard,
-    knowledge_cards: list[KnowledgeCard],
-    variable_cards: list[VariableCard],
-    controversy_cards: list[ControversyCard],
-    axis_cards: list[AxisCard],
-) -> str:
-    sections = [
-        "# Perspective Axes",
-        "",
-        "## QuestionCard",
-        f"- **question_id:** `{question_card.question_id}`",
-        f"- **raw_question:** {question_card.raw_question}",
-        f"- **cleaned_question:** {question_card.cleaned_question}",
-        f"- **actor_entity:** {question_card.actor_entity or 'N/A'}",
-        f"- **outcome_variable:** {question_card.outcome_variable or 'N/A'}",
-        f"- **domain_hint:** {question_card.domain_hint or 'N/A'}",
-        "- **assumptions:**",
-        *_format_string_list(question_card.assumptions),
-        "- **keywords:**",
-        *_format_string_list(question_card.keywords),
-        "- **missing_pieces:**",
-        *_format_string_list(question_card.missing_pieces),
-        "",
-    ]
-
-    sections.extend(
-        _format_card_collection_markdown("Knowledge Cards", knowledge_cards, _format_knowledge_card)
+def _add_problem_input_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "input_text",
+        nargs="?",
+        help="Plain problem text to analyze.",
     )
-    sections.append("")
-    sections.extend(
-        _format_card_collection_markdown("Variable Cards", variable_cards, _format_variable_card)
+    parser.add_argument(
+        "--input-file",
+        type=Path,
+        help="Read plain problem text from a UTF-8 file.",
     )
-    sections.append("")
-    sections.extend(
-        _format_card_collection_markdown(
-            "Controversy Cards",
-            controversy_cards,
-            _format_controversy_card,
+
+
+def _add_output_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--format",
+        choices=("json",),
+        default="json",
+        help="Stable output format. JSON remains the primary machine-readable mode.",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Optional path where the JSON artifact should also be written.",
+    )
+
+
+def _resolve_problem_text(args: argparse.Namespace) -> str:
+    input_text = args.input_text.strip() if args.input_text else None
+    input_file = args.input_file
+
+    if input_text and input_file is not None:
+        raise ValueError("Provide either input_text or --input-file, not both")
+    if input_file is not None:
+        problem_text = input_file.read_text(encoding="utf-8").strip()
+    elif input_text:
+        problem_text = input_text
+    else:
+        raise ValueError("Provide input_text or --input-file")
+
+    if not problem_text:
+        raise ValueError("problem_text must not be empty")
+    return problem_text
+
+
+def _emit_payload(payload: JsonDict, *, output_path: Path | None) -> None:
+    rendered = json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
+    print(rendered)
+    if output_path is not None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered + "\n", encoding="utf-8")
+
+
+def _decompose_payload(problem_text: str) -> JsonDict:
+    return asdict(decompose_problem(problem_text))
+
+
+def _trace_payload(problem_text: str, *, trace_target: str | None = None) -> JsonDict:
+    decompose_result = decompose_problem(problem_text)
+    return asdict(build_trace(decompose_result, trace_target=trace_target))
+
+
+def _compete_payload(problem_text: str, *, trace_target: str | None = None) -> JsonDict:
+    decompose_result = decompose_problem(problem_text)
+    trace_result = build_trace(decompose_result, trace_target=trace_target)
+    return asdict(build_competing_mechanisms(decompose_result, trace_result))
+
+
+def _stress_payload(problem_text: str, *, trace_target: str | None = None) -> JsonDict:
+    decompose_result = decompose_problem(problem_text)
+    trace_result = build_trace(decompose_result, trace_target=trace_target)
+    compete_result = build_competing_mechanisms(decompose_result, trace_result)
+    return asdict(build_stress_test(decompose_result, trace_result, compete_result))
+
+
+def _final_payload(problem_text: str, *, trace_target: str | None = None) -> JsonDict:
+    decompose_result = decompose_problem(problem_text)
+    trace_result = build_trace(decompose_result, trace_target=trace_target)
+    compete_result = build_competing_mechanisms(decompose_result, trace_result)
+    stress_result = build_stress_test(decompose_result, trace_result, compete_result)
+    return asdict(
+        build_final_report(
+            decompose_result,
+            trace_result,
+            compete_result,
+            stress_result,
         )
     )
-    sections.append("")
-    sections.append("## Axis Cards")
-    for index, axis_card in enumerate(axis_cards, start=1):
-        sections.extend(_format_axis_card(index, axis_card))
-
-    return "\n".join(sections)
-
-
-def _format_axes_json(
-    *,
-    question_card: QuestionCard,
-    knowledge_cards: list[KnowledgeCard],
-    variable_cards: list[VariableCard],
-    controversy_cards: list[ControversyCard],
-    axis_cards: list[AxisCard],
-) -> str:
-    payload = {
-        "question_card": asdict(question_card),
-        "knowledge_cards": [asdict(card) for card in knowledge_cards],
-        "variable_cards": [asdict(card) for card in variable_cards],
-        "controversy_cards": [asdict(card) for card in controversy_cards],
-        "axis_cards": [asdict(card) for card in axis_cards],
-    }
-    return json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
-
-
-def _format_perspective_notes_json(notes: list[PerspectiveNote]) -> str:
-    return json.dumps([asdict(note) for note in notes], indent=2, ensure_ascii=False, sort_keys=True)
-
-
-def _format_perspective_notes_markdown(notes: list[PerspectiveNote]) -> str:
-    sections = ["# Perspective Notes"]
-    if not notes:
-        sections.append("- None")
-        return "\n".join(sections)
-
-    for index, note in enumerate(notes, start=1):
-        sections.extend(
-            [
-                "",
-                f"## PerspectiveNote {index}",
-                f"- **note_id:** `{note.note_id}`",
-                f"- **axis_id:** `{note.axis_id}`",
-                f"- **core_claim:** {note.core_claim}",
-                f"- **reasoning:** {note.reasoning}",
-                f"- **counterexample:** {note.counterexample or 'N/A'}",
-                f"- **boundary_condition:** {note.boundary_condition or 'N/A'}",
-                f"- **testable_implication:** {note.testable_implication or 'N/A'}",
-                f"- **verification_question:** {note.verification_question or 'N/A'}",
-                "- **supporting_card_ids:**",
-                *_format_string_list(note.supporting_card_ids),
-                "- **planned_subquestions:**",
-                *_format_string_list(note.planned_subquestions),
-                "- **subanswer_trace:**",
-                *_format_string_list(note.subanswer_trace),
-                "- **evidence_needed:**",
-                *_format_string_list(note.evidence_needed),
-            ]
-        )
-
-    return "\n".join(sections)
-
-
-def _review_action_summary(review_decisions: list[ReviewDecision]) -> dict[str, int]:
-    counts = Counter(decision.action for decision in review_decisions)
-    return {
-        "kept": counts["keep"],
-        "merged": counts["merge"],
-        "rewritten": counts["rewrite"],
-        "dropped": counts["drop"],
-        "total": len(review_decisions),
-    }
-
-
-def _format_review_decisions_markdown(review_decisions: list[ReviewDecision]) -> str:
-    sections = ["# Review Decisions"]
-    if not review_decisions:
-        sections.append("- None")
-        return "\n".join(sections)
-
-    for index, decision in enumerate(review_decisions, start=1):
-        sections.extend(
-            [
-                "",
-                f"## ReviewDecision {index}",
-                f"- **decision_id:** `{decision.decision_id}`",
-                f"- **target_note_id:** `{decision.target_note_id}`",
-                f"- **action:** {decision.action}",
-                f"- **merge_target_note_id:** {decision.merge_target_note_id or 'N/A'}",
-                f"- **verification_question:** {decision.verification_question or 'N/A'}",
-                f"- **reason:** {decision.reason}",
-            ]
-        )
-
-    return "\n".join(sections)
-
-
-def _format_review_summary_markdown(summary: dict[str, int]) -> str:
-    return "\n".join(
-        [
-            "# Review Summary",
-            f"- **kept:** {summary['kept']}",
-            f"- **merged:** {summary['merged']}",
-            f"- **rewritten:** {summary['rewritten']}",
-            f"- **dropped:** {summary['dropped']}",
-            f"- **total:** {summary['total']}",
-        ]
-    )
-
-
-def _format_review_json(notes: list[PerspectiveNote], review_decisions: list[ReviewDecision]) -> str:
-    payload = {
-        "raw_notes": [asdict(note) for note in notes],
-        "review_decisions": [asdict(decision) for decision in review_decisions],
-        "summary": _review_action_summary(review_decisions),
-    }
-    return json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
-
-
-def _format_review_markdown(notes: list[PerspectiveNote], review_decisions: list[ReviewDecision]) -> str:
-    return "\n\n".join(
-        [
-            _format_perspective_notes_markdown(notes).replace("# Perspective Notes", "# Raw Notes", 1),
-            _format_review_decisions_markdown(review_decisions),
-            _format_review_summary_markdown(_review_action_summary(review_decisions)),
-        ]
-    )
-
-
-def _format_pipeline_result_json(result: PipelineResult) -> str:
-    return json.dumps(asdict(result), indent=2, ensure_ascii=False, sort_keys=True)
-
-
-def _format_pipeline_result_markdown(result: PipelineResult) -> str:
-    sections = [
-        "# Pipeline Run",
-        "",
-        "## JSON Export",
-        "JSON is the stable machine-readable primary output for `perspective-extractor run`.",
-        "",
-        "```json",
-        _format_pipeline_result_json(result),
-        "```",
-    ]
-    return "\n".join(sections)
-
-
-def _build_cards_for_question(args: argparse.Namespace) -> tuple[
-    QuestionCard,
-    list[KnowledgeCard],
-    list[VariableCard],
-    list[ControversyCard],
-    list[AxisCard],
-]:
-    question_card = normalize_question(args.question)
-    knowledge_cards = [] if args.skip_knowledge else generate_knowledge_cards(question_card)
-    variable_cards = [] if args.skip_variables else generate_variable_cards(question_card)
-    controversy_cards = [] if args.skip_controversies else generate_controversy_cards(question_card)
-    axis_cards = generate_axes(
-        question_card,
-        knowledge_cards=knowledge_cards,
-        variable_cards=variable_cards,
-        controversy_cards=controversy_cards,
-    )
-    return question_card, knowledge_cards, variable_cards, controversy_cards, axis_cards
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the perspective extractor CLI."""
+    """Run the phase-1 CLI."""
 
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.command == "normalize":
-        question_card = normalize_question(args.question)
-        if args.format == "markdown":
-            print(_format_question_card_markdown(question_card))
-        else:
-            print(_format_question_card_json(question_card))
-        return 0
+    try:
+        problem_text = _resolve_problem_text(args)
 
-    if args.command == "axes":
-        question_card, knowledge_cards, variable_cards, controversy_cards, axis_cards = _build_cards_for_question(args)
-        if args.format == "json":
-            print(
-                _format_axes_json(
-                    question_card=question_card,
-                    knowledge_cards=knowledge_cards,
-                    variable_cards=variable_cards,
-                    controversy_cards=controversy_cards,
-                    axis_cards=axis_cards,
-                )
-            )
+        if args.command == "decompose":
+            payload = _decompose_payload(problem_text)
+        elif args.command == "trace":
+            payload = _trace_payload(problem_text, trace_target=args.trace_target)
+        elif args.command == "compete":
+            payload = _compete_payload(problem_text, trace_target=args.trace_target)
+        elif args.command == "stress":
+            payload = _stress_payload(problem_text, trace_target=args.trace_target)
+        elif args.command == "final":
+            payload = _final_payload(problem_text, trace_target=args.trace_target)
         else:
-            print(
-                _format_axes_markdown(
-                    question_card=question_card,
-                    knowledge_cards=knowledge_cards,
-                    variable_cards=variable_cards,
-                    controversy_cards=controversy_cards,
-                    axis_cards=axis_cards,
-                )
-            )
-        return 0
+            parser.error(f"Unknown command: {args.command}")
+            return 2
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
-    if args.command == "expand":
-        question_card, knowledge_cards, variable_cards, controversy_cards, axis_cards = _build_cards_for_question(args)
-        perspective_notes = expand_axes(
-            axis_cards,
-            question_card,
-            knowledge_cards=knowledge_cards,
-            variable_cards=variable_cards,
-            controversy_cards=controversy_cards,
-        )
-        if args.format == "markdown":
-            print(_format_perspective_notes_markdown(perspective_notes))
-        else:
-            print(_format_perspective_notes_json(perspective_notes))
-        return 0
-
-    if args.command == "review":
-        question_card, knowledge_cards, variable_cards, controversy_cards, axis_cards = _build_cards_for_question(args)
-        perspective_notes = expand_axes(
-            axis_cards,
-            question_card,
-            knowledge_cards=knowledge_cards,
-            variable_cards=variable_cards,
-            controversy_cards=controversy_cards,
-        )
-        review_decisions = review_notes(question_card, perspective_notes)
-        if args.format == "markdown":
-            print(_format_review_markdown(perspective_notes, review_decisions))
-        else:
-            print(_format_review_json(perspective_notes, review_decisions))
-        return 0
-
-    if args.command == "run":
-        result = run_pipeline(args.question)
-        if args.format == "markdown":
-            print(_format_pipeline_result_markdown(result))
-        else:
-            print(_format_pipeline_result_json(result))
-        return 0
-
-    pipeline = PerspectiveExtractionPipeline()
-    demo_input = PipelineInput(
-        topic="example topic",
-        source_text="Example source text for perspective extraction.",
-    )
-    print(pipeline.summarize(demo_input))
+    _emit_payload(payload, output_path=args.output)
     return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+__all__ = ["build_parser", "main"]
