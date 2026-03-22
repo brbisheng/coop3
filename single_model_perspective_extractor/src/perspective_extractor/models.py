@@ -7,13 +7,18 @@ from typing import Literal
 from uuid import uuid4
 
 ReviewAction = Literal["keep", "merge", "rewrite", "drop"]
+ActorType = Literal["person", "organization", "state", "firm", "proxy", "institution", "other"]
+NodeType = Literal["facility", "route", "market", "institutional node", "platform", "other"]
 _ALLOWED_REVIEW_ACTIONS = {"keep", "merge", "rewrite", "drop"}
+_ALLOWED_ACTOR_TYPES = {"person", "organization", "state", "firm", "proxy", "institution", "other"}
+_ALLOWED_NODE_TYPES = {"facility", "route", "market", "institutional node", "platform", "other"}
 
 
 def _make_id(prefix: str) -> str:
     """Create a lightweight stable-enough identifier for in-memory pipeline objects."""
 
     return f"{prefix}_{uuid4().hex[:12]}"
+
 
 
 def _clean_string_list(values: list[str] | None) -> list[str]:
@@ -24,6 +29,7 @@ def _clean_string_list(values: list[str] | None) -> list[str]:
     return [value.strip() for value in values if value and value.strip()]
 
 
+
 def _require_text(value: str, field_name: str) -> str:
     """Ensure a text field is present and not blank."""
 
@@ -31,6 +37,18 @@ def _require_text(value: str, field_name: str) -> str:
     if not cleaned:
         raise ValueError(f"{field_name} must not be empty")
     return cleaned
+
+
+
+def _require_allowed_literal(value: str, field_name: str, allowed_values: set[str]) -> str:
+    """Ensure a string field is one of the accepted literal values."""
+
+    cleaned = _require_text(value, field_name)
+    if cleaned not in allowed_values:
+        allowed = " | ".join(sorted(allowed_values))
+        raise ValueError(f"{field_name} must be one of: {allowed}")
+    return cleaned
+
 
 
 def _clean_relation_pairs(values: list[tuple[str, str]] | None, field_name: str) -> list[tuple[str, str]]:
@@ -46,6 +64,284 @@ def _clean_relation_pairs(values: list[tuple[str, str]] | None, field_name: str)
             _require_text(right, field_name),
         ))
     return cleaned_pairs
+
+
+
+def _require_non_empty_list(values: list[str], field_name: str) -> list[str]:
+    """Ensure a cleaned list contains at least one item."""
+
+    cleaned_values = _clean_string_list(values)
+    if not cleaned_values:
+        raise ValueError(f"{field_name} must contain at least one item")
+    return cleaned_values
+
+
+@dataclass(slots=True)
+class ProblemFrame:
+    """Top-level framing for a single phase-1 analysis problem."""
+
+    core_question: str
+    decision_or_analysis_target: str
+    scope_notes: list[str] = field(default_factory=list)
+    problem_frame_id: str = field(default_factory=lambda: _make_id("problem_frame"))
+
+    def __post_init__(self) -> None:
+        self.problem_frame_id = _require_text(self.problem_frame_id, "problem_frame_id")
+        self.core_question = _require_text(self.core_question, "core_question")
+        self.decision_or_analysis_target = _require_text(
+            self.decision_or_analysis_target,
+            "decision_or_analysis_target",
+        )
+        self.scope_notes = _clean_string_list(self.scope_notes)
+
+
+@dataclass(slots=True)
+class ActorCard:
+    """Concrete actor relevant to the current problem frame."""
+
+    name: str
+    type: ActorType
+    role: str
+    goal_guess: str
+    why_relevant: str
+    actor_id: str = field(default_factory=lambda: _make_id("actor"))
+
+    def __post_init__(self) -> None:
+        self.actor_id = _require_text(self.actor_id, "actor_id")
+        self.name = _require_text(self.name, "name")
+        self.type = _require_allowed_literal(self.type, "type", _ALLOWED_ACTOR_TYPES)
+        self.role = _require_text(self.role, "role")
+        self.goal_guess = _require_text(self.goal_guess, "goal_guess")
+        self.why_relevant = _require_text(self.why_relevant, "why_relevant")
+
+
+@dataclass(slots=True)
+class NodeCard:
+    """Operational node, facility, route, or market that matters for the problem."""
+
+    name: str
+    type: NodeType
+    function: str
+    why_relevant: str
+    node_id: str = field(default_factory=lambda: _make_id("node"))
+
+    def __post_init__(self) -> None:
+        self.node_id = _require_text(self.node_id, "node_id")
+        self.name = _require_text(self.name, "name")
+        self.type = _require_allowed_literal(self.type, "type", _ALLOWED_NODE_TYPES)
+        self.function = _require_text(self.function, "function")
+        self.why_relevant = _require_text(self.why_relevant, "why_relevant")
+
+
+@dataclass(slots=True)
+class ConstraintCard:
+    """Binding constraint that shapes what actors or nodes can realistically do."""
+
+    constraint: str
+    applies_to: list[str]
+    why_it_matters: str
+    constraint_id: str = field(default_factory=lambda: _make_id("constraint"))
+
+    def __post_init__(self) -> None:
+        self.constraint_id = _require_text(self.constraint_id, "constraint_id")
+        self.constraint = _require_text(self.constraint, "constraint")
+        self.applies_to = _require_non_empty_list(self.applies_to, "applies_to")
+        self.why_it_matters = _require_text(self.why_it_matters, "why_it_matters")
+
+
+@dataclass(slots=True)
+class DecomposeResult:
+    """Primary structured output for the phase-1 decompose step."""
+
+    problem_frame: ProblemFrame
+    actor_cards: list[ActorCard] = field(default_factory=list)
+    node_cards: list[NodeCard] = field(default_factory=list)
+    constraint_cards: list[ConstraintCard] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.actor_cards = list(self.actor_cards)
+        self.node_cards = list(self.node_cards)
+        self.constraint_cards = list(self.constraint_cards)
+
+
+@dataclass(slots=True)
+class TraceStep:
+    """One ordered consequence in a causal trace."""
+
+    order: int
+    event: str
+    mechanism: str
+    affected_entities: list[str]
+
+    def __post_init__(self) -> None:
+        if self.order < 1:
+            raise ValueError("order must be greater than or equal to 1")
+        self.event = _require_text(self.event, "event")
+        self.mechanism = _require_text(self.mechanism, "mechanism")
+        self.affected_entities = _require_non_empty_list(
+            self.affected_entities,
+            "affected_entities",
+        )
+
+
+@dataclass(slots=True)
+class TraceResult:
+    """Primary structured output for the phase-1 trace step."""
+
+    trace_target: str
+    consequence_chain: list[TraceStep] = field(default_factory=list)
+    trace_id: str = field(default_factory=lambda: _make_id("trace"))
+
+    def __post_init__(self) -> None:
+        self.trace_id = _require_text(self.trace_id, "trace_id")
+        self.trace_target = _require_text(self.trace_target, "trace_target")
+        self.consequence_chain = list(self.consequence_chain)
+        if not self.consequence_chain:
+            raise ValueError("consequence_chain must contain at least one TraceStep")
+
+        expected_order = 1
+        for step in self.consequence_chain:
+            if step.order != expected_order:
+                raise ValueError("consequence_chain orders must start at 1 and increase by 1")
+            expected_order += 1
+
+
+@dataclass(slots=True)
+class CompetingMechanism:
+    """One competing explanation with a differentiating prediction."""
+
+    label: str
+    core_mechanism: str
+    what_it_explains: str
+    prediction: str
+    observable_signal: str
+
+    def __post_init__(self) -> None:
+        self.label = _require_text(self.label, "label")
+        self.core_mechanism = _require_text(self.core_mechanism, "core_mechanism")
+        self.what_it_explains = _require_text(self.what_it_explains, "what_it_explains")
+        self.prediction = _require_text(self.prediction, "prediction")
+        self.observable_signal = _require_text(self.observable_signal, "observable_signal")
+
+
+@dataclass(slots=True)
+class CompeteResult:
+    """Primary structured output for the phase-1 compete step."""
+
+    competing_mechanisms: list[CompetingMechanism]
+    divergence_note: str
+    compete_id: str = field(default_factory=lambda: _make_id("compete"))
+
+    def __post_init__(self) -> None:
+        self.compete_id = _require_text(self.compete_id, "compete_id")
+        self.competing_mechanisms = list(self.competing_mechanisms)
+        if len(self.competing_mechanisms) != 2:
+            raise ValueError("competing_mechanisms must contain exactly two entries")
+        self.divergence_note = _require_text(self.divergence_note, "divergence_note")
+
+        predictions = {
+            mechanism.prediction.casefold() for mechanism in self.competing_mechanisms
+        }
+        if len(predictions) != len(self.competing_mechanisms):
+            raise ValueError("competing_mechanisms predictions must not be identical")
+
+
+@dataclass(slots=True)
+class FalsificationEntry:
+    """One stress-test against the current strongest claim."""
+
+    claim_under_stress: str
+    hidden_assumption: str
+    how_it_could_fail: str
+    what_evidence_would_break_it: str
+
+    def __post_init__(self) -> None:
+        self.claim_under_stress = _require_text(self.claim_under_stress, "claim_under_stress")
+        self.hidden_assumption = _require_text(self.hidden_assumption, "hidden_assumption")
+        self.how_it_could_fail = _require_text(self.how_it_could_fail, "how_it_could_fail")
+        self.what_evidence_would_break_it = _require_text(
+            self.what_evidence_would_break_it,
+            "what_evidence_would_break_it",
+        )
+
+
+@dataclass(slots=True)
+class SurpriseEntry:
+    """One plausible surprise pathway that shallow analysis would likely miss."""
+
+    surprise: str
+    why_shallow_analysis_misses_it: str
+    what_actor_or_node_it_depends_on: list[str]
+
+    def __post_init__(self) -> None:
+        self.surprise = _require_text(self.surprise, "surprise")
+        self.why_shallow_analysis_misses_it = _require_text(
+            self.why_shallow_analysis_misses_it,
+            "why_shallow_analysis_misses_it",
+        )
+        self.what_actor_or_node_it_depends_on = _require_non_empty_list(
+            self.what_actor_or_node_it_depends_on,
+            "what_actor_or_node_it_depends_on",
+        )
+
+
+@dataclass(slots=True)
+class StressResult:
+    """Primary structured output for the phase-1 stress step."""
+
+    falsification_ledger: list[FalsificationEntry] = field(default_factory=list)
+    surprise_ledger: list[SurpriseEntry] = field(default_factory=list)
+    stress_id: str = field(default_factory=lambda: _make_id("stress"))
+
+    def __post_init__(self) -> None:
+        self.stress_id = _require_text(self.stress_id, "stress_id")
+        self.falsification_ledger = list(self.falsification_ledger)
+        self.surprise_ledger = list(self.surprise_ledger)
+        if not self.falsification_ledger:
+            raise ValueError("falsification_ledger must contain at least one entry")
+        if not self.surprise_ledger:
+            raise ValueError("surprise_ledger must contain at least one entry")
+
+
+@dataclass(slots=True)
+class FinalReport:
+    """Dense final phase-1 report assembled from the structured artifacts."""
+
+    key_actors_and_nodes: list[str]
+    critical_mechanism_chains: list[str]
+    competing_explanations_and_divergent_predictions: list[str]
+    likely_surprises: list[str]
+    main_uncertainties_and_hidden_assumptions: list[str]
+    report_id: str = field(default_factory=lambda: _make_id("report"))
+    executive_summary: str | None = None
+
+    def __post_init__(self) -> None:
+        self.report_id = _require_text(self.report_id, "report_id")
+        self.key_actors_and_nodes = _require_non_empty_list(
+            self.key_actors_and_nodes,
+            "key_actors_and_nodes",
+        )
+        self.critical_mechanism_chains = _require_non_empty_list(
+            self.critical_mechanism_chains,
+            "critical_mechanism_chains",
+        )
+        self.competing_explanations_and_divergent_predictions = _require_non_empty_list(
+            self.competing_explanations_and_divergent_predictions,
+            "competing_explanations_and_divergent_predictions",
+        )
+        self.likely_surprises = _require_non_empty_list(
+            self.likely_surprises,
+            "likely_surprises",
+        )
+        self.main_uncertainties_and_hidden_assumptions = _require_non_empty_list(
+            self.main_uncertainties_and_hidden_assumptions,
+            "main_uncertainties_and_hidden_assumptions",
+        )
+        self.executive_summary = (
+            _require_text(self.executive_summary, "executive_summary")
+            if self.executive_summary is not None
+            else None
+        )
 
 
 @dataclass(slots=True)
@@ -72,6 +368,10 @@ class PipelineInput:
     def __post_init__(self) -> None:
         self.topic = _require_text(self.topic, "topic")
         self.source_text = self.source_text.strip()
+
+
+# Legacy many-perspectives schemas retained only for backward compatibility while
+# the codebase transitions to the phase-1 rigor pipeline.
 
 
 @dataclass(slots=True)
@@ -182,7 +482,7 @@ class ControversyCard:
 
 @dataclass(slots=True)
 class AxisCard:
-    """One structurally distinct observation window on the question."""
+    """Legacy axis schema from the earlier many-perspectives flow."""
 
     name: str
     axis_type: str
@@ -214,7 +514,7 @@ class AxisCard:
 
 @dataclass(slots=True)
 class PerspectiveNote:
-    """An independently generated perspective tied to a single axis."""
+    """Legacy per-axis note schema retained for backward compatibility."""
 
     axis_id: str
     core_claim: str
@@ -292,7 +592,7 @@ class AxisHierarchy:
 
 @dataclass(slots=True)
 class ReviewDecision:
-    """Overlap or novelty judgment for a generated perspective."""
+    """Legacy overlap or novelty judgment for a generated perspective."""
 
     target_note_id: str
     action: ReviewAction
@@ -322,7 +622,7 @@ class ReviewDecision:
 
 @dataclass(slots=True)
 class PerspectiveMap:
-    """Final structured map preserving perspective tension and compatibility."""
+    """Legacy final map from the previous many-perspectives path."""
 
     question_id: str
     kept_notes: list[PerspectiveNote]
@@ -363,7 +663,7 @@ class PerspectiveMap:
 
 @dataclass(slots=True)
 class PipelineResult:
-    """Top-level structured output for a complete pipeline execution."""
+    """Legacy top-level structured output for the many-perspectives execution path."""
 
     question_card: QuestionCard
     axis_cards: list[AxisCard] = field(default_factory=list)
@@ -392,6 +692,21 @@ class PipelineResult:
 
 
 __all__ = [
+    "ActorCard",
+    "ActorType",
+    "CompeteResult",
+    "CompetingMechanism",
+    "ConstraintCard",
+    "DecomposeResult",
+    "FalsificationEntry",
+    "FinalReport",
+    "NodeCard",
+    "NodeType",
+    "ProblemFrame",
+    "StressResult",
+    "SurpriseEntry",
+    "TraceResult",
+    "TraceStep",
     "AxisHierarchy",
     "AxisCard",
     "ControversyCard",
