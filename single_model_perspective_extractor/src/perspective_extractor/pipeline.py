@@ -6,7 +6,10 @@ from dataclasses import dataclass
 
 from .models import (
     AxisCard,
+    CompeteResult,
     ControversyCard,
+    DecomposeResult,
+    FinalReport,
     KnowledgeCard,
     PerspectiveMap,
     PerspectiveNote,
@@ -15,8 +18,15 @@ from .models import (
     PipelineResult,
     QuestionCard,
     ReviewDecision,
+    StressResult,
+    TraceResult,
     VariableCard,
 )
+from .decompose import decompose_problem
+from .trace import build_trace
+from .compete import build_competing_mechanisms
+from .stress import build_stress_test
+from .final import build_final_report
 from .normalize import normalize_question, normalize_text
 from .knowledge import (
     collect_background,
@@ -77,6 +87,17 @@ class PipelineArtifacts:
     trace_output: TraceArtifacts
     compete_output: CompeteArtifacts
     stress_output: StressArtifacts
+
+
+@dataclass(frozen=True, slots=True)
+class Phase1PipelineArtifacts:
+    """Artifact bundle for the dedicated phase-1 reasoning path."""
+
+    decompose_result: DecomposeResult
+    trace_result: TraceResult
+    compete_result: CompeteResult
+    stress_result: StressResult
+    final_report: FinalReport
 
 
 def _card_id(card: KnowledgeCard | VariableCard | ControversyCard) -> str:
@@ -418,6 +439,42 @@ def run_pipeline(
     )
 
 
+def run_phase1_pipeline(
+    problem_text: str,
+    *,
+    trace_target: str | None = None,
+) -> Phase1PipelineArtifacts:
+    """Run the dedicated phase-1 decompose→trace→compete→stress→final path."""
+
+    decompose_result = decompose_problem(problem_text)
+    trace_result = build_trace(
+        decompose_result,
+        trace_target=trace_target,
+    )
+    compete_result = build_competing_mechanisms(
+        decompose_result,
+        trace_result,
+    )
+    stress_result = build_stress_test(
+        decompose_result,
+        trace_result,
+        compete_result,
+    )
+    final_report = build_final_report(
+        decompose_result,
+        trace_result,
+        compete_result,
+        stress_result,
+    )
+    return Phase1PipelineArtifacts(
+        decompose_result=decompose_result,
+        trace_result=trace_result,
+        compete_result=compete_result,
+        stress_result=stress_result,
+        final_report=final_report,
+    )
+
+
 class PerspectiveExtractionPipeline:
     """Backward-compatible orchestrator for the earlier scaffold interface."""
 
@@ -469,6 +526,7 @@ class PerspectiveExtractionPipeline:
 __all__ = [
     "CompeteArtifacts",
     "DecomposeArtifacts",
+    "Phase1PipelineArtifacts",
     "PerspectiveExtractionPipeline",
     "PipelineArtifacts",
     "PipelinePromptConfig",
@@ -482,6 +540,7 @@ __all__ = [
     "final",
     "generate_axes",
     "review_notes",
+    "run_phase1_pipeline",
     "run_pipeline",
     "stress",
     "trace",

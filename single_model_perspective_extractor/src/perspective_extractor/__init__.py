@@ -1,6 +1,11 @@
 """Top-level package for the perspective extractor scaffold."""
 
 from .decompose import decompose_problem
-from .pipeline import PerspectiveExtractionPipeline, run_pipeline
+from .pipeline import PerspectiveExtractionPipeline, run_phase1_pipeline, run_pipeline
 
-__all__ = ["PerspectiveExtractionPipeline", "decompose_problem", "run_pipeline"]
+__all__ = [
+    "PerspectiveExtractionPipeline",
+    "decompose_problem",
+    "run_phase1_pipeline",
+    "run_pipeline",
+]
