@@ -1,0 +1,42 @@
+{
+  "consequence_chain": [
+    {
+      "affected_entities": [
+        "alternate ports",
+        "customs",
+        "regional distributors",
+        "main fuel import terminal"
+      ],
+      "event": "Alternate-port rerouting after a fuel terminal disruption immediately constrains activity at alternate ports and forces customs to absorb the first operational shock",
+      "mechanism": "The first-order mechanism is direct disruption: Physical throughput or congestion limits tightens at alternate ports, so the actors closest to the node lose throughput, access, or decision latitude before anyone else can adjust",
+      "order": 1
+    },
+    {
+      "affected_entities": [
+        "customs",
+        "regional distributors",
+        "shippers",
+        "alternate ports",
+        "main fuel import terminal"
+      ],
+      "event": "Secondary actors reroute, reprioritize, or substitute around alternate ports, spreading pressure into adjacent nodes and decisions",
+      "mechanism": "The second-order mechanism is propagation through adaptation: once customs and related operators respond to the initial constraint, queues, substitutions, compliance delays, and bargaining shifts move the disruption into neighboring entities rather than leaving it isolated",
+      "order": 2
+    },
+    {
+      "affected_entities": [
+        "customs",
+        "regional distributors",
+        "shippers",
+        "Geographic or institutional scope is not explicit yet.",
+        "Success criteria or outcome metric should be specified more concretely.",
+        "Clarify who matters, which nodes or chokepoints matter, and what constraints could dominate the outcome."
+      ],
+      "event": "Tertiary outcomes emerge after the adaptive response changes incentives, expectations, or downstream performance in the wider problem frame",
+      "mechanism": "The third-order mechanism is system-level pass-through: the earlier rerouting and prioritization choices alter who bears scarcity, delay, or political cost, which changes the broader outcome targeted by 'Clarify who matters, which nodes or chokepoints matter, and what constraints could dominate the outcome.'",
+      "order": 3
+    }
+  ],
+  "trace_id": "trace_4412ce1049e8",
+  "trace_target": "Alternate-port rerouting after a fuel terminal disruption"
+}

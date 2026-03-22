@@ -1,0 +1,20 @@
+{
+  "compete_id": "compete_db91759479cc",
+  "competing_mechanisms": [
+    {
+      "core_mechanism": "Direct throughput and capacity loss at alternate ports is the dominant mechanism; the problem persists mainly because the first-order bottleneck from 'Alternate-port rerouting after a fuel terminal disruption immediately constrains activity at alternate ports and forces customs to absorb the first operational shock' is still binding",
+      "label": "A",
+      "observable_signal": "Operational recovery at alternate ports should precede normalization elsewhere: queue lengths, throughput, or service availability near alternate ports improve before broader downstream symptoms fully clear",
+      "prediction": "If mechanism A is right, conditions should improve quickly once alternate ports regains workable throughput or the most binding part of 'Physical throughput or congestion limits' is relaxed",
+      "what_it_explains": "Why the immediate disruption around alternate ports should account for most of the downstream effects seen in tertiary outcomes emerge after the adaptive response changes incentives, expectations, or downstream performance in the wider problem frame"
+    },
+    {
+      "core_mechanism": "Coordination, incentives, and expectation effects among customs and adjacent actors are the dominant mechanism, so downstream disruption keeps spreading even after the focal node begins recovering",
+      "label": "B",
+      "observable_signal": "Broader symptoms remain elevated despite improving conditions at alternate ports: substitute nodes stay congested, allocations remain distorted, or affected actors keep acting as though the shock is still binding",
+      "prediction": "If mechanism B is right, downstream disruption should persist after alternate ports stabilizes because actors continue hoarding, reprioritizing, or mis-coordinating around the expected risk",
+      "what_it_explains": "Why the second- and third-order effects from 'Secondary actors reroute, reprioritize, or substitute around alternate ports, spreading pressure into adjacent nodes and decisions' can remain large even if the original node-level shock eases"
+    }
+  ],
+  "divergence_note": "The cards diverge on whether the dominant driver is the direct bottleneck at alternate ports or the adaptive behavior that follows it. Mechanism A predicts fast normalization once the node-level bottleneck eases, while mechanism B predicts persistent downstream effects after nominal recovery."
+}
