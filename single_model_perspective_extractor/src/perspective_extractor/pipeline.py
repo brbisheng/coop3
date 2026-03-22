@@ -31,6 +31,54 @@ from .expand import expand_axis as expand_axis_note
 from .prompts import PromptVariant, resolve_prompt_variant
 
 
+@dataclass(frozen=True, slots=True)
+class DecomposeArtifacts:
+    """Artifacts produced by problem decomposition."""
+
+    question_card: QuestionCard
+    knowledge_cards: list[KnowledgeCard]
+    variable_cards: list[VariableCard]
+    controversy_cards: list[ControversyCard]
+
+
+@dataclass(frozen=True, slots=True)
+class TraceArtifacts:
+    """Artifacts produced while tracing decomposition outputs through a target."""
+
+    trace_target: str
+    axis_cards: list[AxisCard]
+    perspective_notes: list[PerspectiveNote]
+
+
+@dataclass(frozen=True, slots=True)
+class CompeteArtifacts:
+    """Artifacts produced while comparing traced candidates."""
+
+    review_decisions: list[ReviewDecision]
+    notes_by_action: dict[str, list[PerspectiveNote]]
+
+
+@dataclass(frozen=True, slots=True)
+class StressArtifacts:
+    """Artifacts produced while stress-testing the competing candidates."""
+
+    kept_notes: list[PerspectiveNote]
+    merged_notes: list[PerspectiveNote]
+    rewrite_notes: list[PerspectiveNote]
+    dropped_notes: list[PerspectiveNote]
+    perspective_map: PerspectiveMap
+
+
+@dataclass(frozen=True, slots=True)
+class PipelineArtifacts:
+    """Full artifact bundle for the new default execution order."""
+
+    decompose_output: DecomposeArtifacts
+    trace_output: TraceArtifacts
+    compete_output: CompeteArtifacts
+    stress_output: StressArtifacts
+
+
 def _card_id(card: KnowledgeCard | VariableCard | ControversyCard) -> str:
     if isinstance(card, KnowledgeCard):
         return card.knowledge_id
@@ -176,10 +224,12 @@ def expand_axes(
     return perspective_notes
 
 
+
 def review_notes(question_card: QuestionCard, notes: list[PerspectiveNote]) -> list[ReviewDecision]:
     """Review expanded notes for overlap, novelty, and rewrite needs."""
 
     return review_note_decisions(question_card, notes)
+
 
 
 def build_perspective_map(
@@ -190,6 +240,7 @@ def build_perspective_map(
     """Assemble the final perspective map from reviewed notes."""
 
     return synthesize_map(question_card, kept_notes, review_decisions)
+
 
 
 def _partition_notes_by_review_action(
@@ -215,17 +266,134 @@ def _partition_notes_by_review_action(
     return grouped_notes
 
 
+
+def decompose(problem_text: str) -> DecomposeArtifacts:
+    """Decompose the input problem into normalized cards used by later stages."""
+
+    question_card = normalize_question(problem_text)
+    knowledge_cards = generate_knowledge_cards(question_card)
+    variable_cards = generate_variable_cards(question_card)
+    controversy_cards = generate_controversy_cards(question_card)
+    return DecomposeArtifacts(
+        question_card=question_card,
+        knowledge_cards=knowledge_cards,
+        variable_cards=variable_cards,
+        controversy_cards=controversy_cards,
+    )
+
+
+
+def _run_legacy_perspective_flow(decompose_output: DecomposeArtifacts) -> tuple[list[AxisCard], list[PerspectiveNote]]:
+    """Compatibility layer that preserves the earlier axis-driven extraction machinery."""
+
+    axis_cards = generate_axes(
+        decompose_output.question_card,
+        knowledge_cards=decompose_output.knowledge_cards,
+        variable_cards=decompose_output.variable_cards,
+        controversy_cards=decompose_output.controversy_cards,
+    )
+    perspective_notes = expand_axes(
+        axis_cards,
+        decompose_output.question_card,
+        knowledge_cards=decompose_output.knowledge_cards,
+        variable_cards=decompose_output.variable_cards,
+        controversy_cards=decompose_output.controversy_cards,
+    )
+    return axis_cards, perspective_notes
+
+
+
+def trace(decompose_output: DecomposeArtifacts, trace_target: str) -> TraceArtifacts:
+    """Trace decomposition artifacts against the selected target.
+
+    The default implementation routes through the legacy axis/note flow so the
+    new pipeline order can coexist with existing synthesis components.
+    """
+
+    axis_cards, perspective_notes = _run_legacy_perspective_flow(decompose_output)
+    return TraceArtifacts(
+        trace_target=trace_target,
+        axis_cards=axis_cards,
+        perspective_notes=perspective_notes,
+    )
+
+
+
+def compete(
+    decompose_output: DecomposeArtifacts,
+    trace_output: TraceArtifacts,
+) -> CompeteArtifacts:
+    """Compare traced candidates and decide which ones compete, merge, or drop."""
+
+    review_decisions = review_notes(
+        decompose_output.question_card,
+        trace_output.perspective_notes,
+    )
+    notes_by_action = _partition_notes_by_review_action(
+        trace_output.perspective_notes,
+        review_decisions,
+    )
+    return CompeteArtifacts(
+        review_decisions=review_decisions,
+        notes_by_action=notes_by_action,
+    )
+
+
+
+def stress(
+    decompose_output: DecomposeArtifacts,
+    trace_output: TraceArtifacts,
+    compete_output: CompeteArtifacts,
+) -> StressArtifacts:
+    """Stress-test candidate outputs and synthesize the final structured map."""
+
+    kept_notes = compete_output.notes_by_action["keep"]
+    perspective_map = build_perspective_map(
+        decompose_output.question_card,
+        kept_notes,
+        review_decisions=compete_output.review_decisions,
+    )
+    return StressArtifacts(
+        kept_notes=kept_notes,
+        merged_notes=compete_output.notes_by_action["merge"],
+        rewrite_notes=compete_output.notes_by_action["rewrite"],
+        dropped_notes=compete_output.notes_by_action["drop"],
+        perspective_map=perspective_map,
+    )
+
+
+
+def final(all_artifacts: PipelineArtifacts) -> PipelineResult:
+    """Assemble the final pipeline result from the full artifact bundle."""
+
+    return PipelineResult(
+        question_card=all_artifacts.decompose_output.question_card,
+        axis_cards=all_artifacts.trace_output.axis_cards,
+        knowledge_cards=all_artifacts.decompose_output.knowledge_cards,
+        variable_cards=all_artifacts.decompose_output.variable_cards,
+        controversy_cards=all_artifacts.decompose_output.controversy_cards,
+        perspective_notes=all_artifacts.trace_output.perspective_notes,
+        review_decisions=all_artifacts.compete_output.review_decisions,
+        kept_notes=all_artifacts.stress_output.kept_notes,
+        merged_notes=all_artifacts.stress_output.merged_notes,
+        rewrite_notes=all_artifacts.stress_output.rewrite_notes,
+        dropped_notes=all_artifacts.stress_output.dropped_notes,
+        perspective_map=all_artifacts.stress_output.perspective_map,
+    )
+
+
+
 def run_pipeline(
     question: str,
     *,
     prompt_variant: PromptVariant | None = None,
     lens: PromptVariant | None = None,
 ) -> PipelineResult:
-    """Run the full structured perspective-extraction pipeline for one question.
+    """Run the default decompose→trace→compete→stress→final pipeline.
 
-    The returned ``PipelineResult`` preserves the full stage-by-stage trace:
-    normalized question, support cards, axis cards, raw notes, review decisions,
-    action-specific note partitions, and the synthesized final map.
+    The returned ``PipelineResult`` preserves the full stage-by-stage trace while
+    keeping the prior axis/note perspective-extraction implementation behind a
+    compatibility layer rather than presenting it as the primary reasoning flow.
     """
 
     PipelinePromptConfig(
@@ -233,48 +401,20 @@ def run_pipeline(
         lens=lens,
     ).resolved_prompt_variant
 
-    question_card = normalize_question(question)
-    knowledge_cards = generate_knowledge_cards(question_card)
-    variable_cards = generate_variable_cards(question_card)
-    controversy_cards = generate_controversy_cards(question_card)
-
-    axis_cards = generate_axes(
-        question_card,
-        knowledge_cards=knowledge_cards,
-        variable_cards=variable_cards,
-        controversy_cards=controversy_cards,
+    decompose_output = decompose(question)
+    trace_output = trace(
+        decompose_output,
+        trace_target=decompose_output.question_card.cleaned_question,
     )
-
-    perspective_notes = expand_axes(
-        axis_cards,
-        question_card,
-        knowledge_cards=knowledge_cards,
-        variable_cards=variable_cards,
-        controversy_cards=controversy_cards,
-    )
-
-    review_decisions = review_notes(question_card, perspective_notes)
-    notes_by_action = _partition_notes_by_review_action(perspective_notes, review_decisions)
-    kept_notes = notes_by_action["keep"]
-    perspective_map = build_perspective_map(
-        question_card,
-        kept_notes,
-        review_decisions=review_decisions,
-    )
-
-    return PipelineResult(
-        question_card=question_card,
-        axis_cards=axis_cards,
-        knowledge_cards=knowledge_cards,
-        variable_cards=variable_cards,
-        controversy_cards=controversy_cards,
-        perspective_notes=perspective_notes,
-        review_decisions=review_decisions,
-        kept_notes=kept_notes,
-        merged_notes=notes_by_action["merge"],
-        rewrite_notes=notes_by_action["rewrite"],
-        dropped_notes=notes_by_action["drop"],
-        perspective_map=perspective_map,
+    compete_output = compete(decompose_output, trace_output)
+    stress_output = stress(decompose_output, trace_output, compete_output)
+    return final(
+        PipelineArtifacts(
+            decompose_output=decompose_output,
+            trace_output=trace_output,
+            compete_output=compete_output,
+            stress_output=stress_output,
+        )
     )
 
 
@@ -327,12 +467,22 @@ class PerspectiveExtractionPipeline:
 
 
 __all__ = [
+    "CompeteArtifacts",
+    "DecomposeArtifacts",
     "PerspectiveExtractionPipeline",
+    "PipelineArtifacts",
     "PipelinePromptConfig",
+    "StressArtifacts",
+    "TraceArtifacts",
     "build_perspective_map",
+    "compete",
+    "decompose",
     "expand_axis",
     "expand_axes",
+    "final",
     "generate_axes",
     "review_notes",
     "run_pipeline",
+    "stress",
+    "trace",
 ]
