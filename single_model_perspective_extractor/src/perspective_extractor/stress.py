@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Iterable
+from dataclasses import asdict
 
 from .models import (
     CompeteResult,
@@ -12,11 +15,55 @@ from .models import (
     SurpriseEntry,
     TraceResult,
 )
-
+from .openrouter import call_openrouter
 
 _GENERIC_ACTOR = "the lead actor"
 _GENERIC_NODE = "the focal node"
 _GENERIC_CONSTRAINT = "binding operating limits"
+
+STRESS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "falsification_ledger": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "claim_under_stress": {"type": "string"},
+                    "hidden_assumption": {"type": "string"},
+                    "how_it_could_fail": {"type": "string"},
+                    "what_evidence_would_break_it": {"type": "string"},
+                },
+                "required": [
+                    "claim_under_stress",
+                    "hidden_assumption",
+                    "how_it_could_fail",
+                    "what_evidence_would_break_it",
+                ],
+            },
+        },
+        "surprise_ledger": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "surprise": {"type": "string"},
+                    "why_shallow_analysis_misses_it": {"type": "string"},
+                    "what_actor_or_node_it_depends_on": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+                "required": [
+                    "surprise",
+                    "why_shallow_analysis_misses_it",
+                    "what_actor_or_node_it_depends_on",
+                ],
+            },
+        },
+    },
+    "required": ["falsification_ledger", "surprise_ledger"],
+}
 
 
 def build_stress_test(
@@ -26,8 +73,14 @@ def build_stress_test(
 ) -> StressResult:
     """Generate falsification and surprise entries from prior artifacts."""
 
-    actor_name = _first_or_fallback((actor.name for actor in decompose_result.actor_cards), _GENERIC_ACTOR)
-    node_name = _first_or_fallback((node.name for node in decompose_result.node_cards), _GENERIC_NODE)
+    actor_name = _first_or_fallback(
+        (actor.name for actor in decompose_result.actor_cards),
+        _GENERIC_ACTOR,
+    )
+    node_name = _first_or_fallback(
+        (node.name for node in decompose_result.node_cards),
+        _GENERIC_NODE,
+    )
     constraint = _first_or_fallback(
         (constraint.constraint for constraint in decompose_result.constraint_cards),
         _GENERIC_CONSTRAINT,
@@ -100,6 +153,66 @@ build_stress = build_stress_test
 generate_stress_entries = build_stress_test
 
 
+def build_stress_prompt(
+    decompose_result: DecomposeResult,
+    trace_result: TraceResult,
+    compete_result: CompeteResult,
+) -> str:
+    """Return the live stress-stage prompt."""
+
+    return (
+        "You are running the phase-1 rigor pipeline stress stage. Return JSON only and no markdown.\n\n"
+        "Task: stress-test the current mechanism cards with falsification and surprise ledgers.\n\n"
+        f"Schema:\n{json.dumps(STRESS_SCHEMA, indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
+        "Rules:\n"
+        "- Make falsification entries concrete enough to break the current claim.\n"
+        "- Surprise entries should identify actors or nodes that shallow analysis might miss.\n"
+        "- Keep every entry grounded in the provided artifacts.\n\n"
+        "Decompose artifact:\n"
+        f"{json.dumps(asdict(decompose_result), indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
+        "Trace artifact:\n"
+        f"{json.dumps(asdict(trace_result), indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
+        "Compete artifact:\n"
+        f"{json.dumps(asdict(compete_result), indent=2, ensure_ascii=False, sort_keys=True)}\n"
+    )
+
+
+def run_stress(
+    decompose_result: DecomposeResult,
+    trace_result: TraceResult,
+    compete_result: CompeteResult,
+    *,
+    model: str,
+    api_key: str,
+) -> StressResult:
+    """Run the live stress stage directly from this module."""
+
+    response_text = call_openrouter(
+        api_key=api_key,
+        model=model,
+        messages=[
+            {"role": "system", "content": "Return strict JSON for the requested schema only."},
+            {
+                "role": "user",
+                "content": build_stress_prompt(
+                    decompose_result,
+                    trace_result,
+                    compete_result,
+                ),
+            },
+        ],
+        temperature=0.0,
+        max_tokens=2400,
+    )
+    payload = _load_json_object(response_text, stage_name="stress")
+    return StressResult(
+        falsification_ledger=[
+            FalsificationEntry(**item) for item in payload["falsification_ledger"]
+        ],
+        surprise_ledger=[SurpriseEntry(**item) for item in payload["surprise_ledger"]],
+    )
+
+
 def _first_or_fallback(values: Iterable[str], fallback: str) -> str:
     for value in values:
         cleaned = value.strip()
@@ -108,15 +221,12 @@ def _first_or_fallback(values: Iterable[str], fallback: str) -> str:
     return fallback
 
 
-
 def _actor_names(decompose_result: DecomposeResult, *, limit: int) -> list[str]:
     return [actor.name for actor in decompose_result.actor_cards[:limit] if actor.name.strip()]
 
 
-
 def _node_names(decompose_result: DecomposeResult, *, limit: int) -> list[str]:
     return [node.name for node in decompose_result.node_cards[:limit] if node.name.strip()]
-
 
 
 def _dedupe(values: Iterable[str]) -> list[str]:
@@ -130,4 +240,22 @@ def _dedupe(values: Iterable[str]) -> list[str]:
     return ordered
 
 
-__all__ = ["build_stress", "build_stress_test", "generate_stress_entries"]
+def _load_json_object(response_text: str, *, stage_name: str) -> dict[str, object]:
+    cleaned = response_text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    payload = json.loads(cleaned)
+    if not isinstance(payload, dict):
+        raise ValueError(f"{stage_name} must return a JSON object")
+    return payload
+
+
+__all__ = [
+    "STRESS_SCHEMA",
+    "build_stress",
+    "build_stress_prompt",
+    "build_stress_test",
+    "generate_stress_entries",
+    "run_stress",
+]
