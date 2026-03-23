@@ -1,4 +1,4 @@
-"""Synthesis stage for perspective extraction."""
+"""Legacy synthesis stage retained for compatibility only."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import re
 from collections import defaultdict
 from collections.abc import Iterable
 
-from .models import (
+from ..models import (
     AxisHierarchy,
     PerspectiveBranch,
     PerspectiveMap,

@@ -1,11 +1,11 @@
-from perspective_extractor.expand import expand_axis
+from perspective_extractor.legacy.expand import expand_axis
 from perspective_extractor.knowledge import (
     generate_controversy_cards,
     generate_knowledge_cards,
     generate_variable_cards,
 )
 from perspective_extractor.normalize import normalize_question
-from perspective_extractor.axes import generate_axes
+from perspective_extractor.legacy.axes import generate_axes
 
 
 QUESTION_CARD = normalize_question("How does remote work affect employee productivity?")

@@ -1,33 +1,30 @@
 # single_model_perspective_extractor
 
-A scaffolded Python project for extracting and synthesizing perspectives with a
-single-model pipeline. The package namespace is `perspective_extractor`.
+`single_model_perspective_extractor` now centers the **phase1 rigor engine** as the
+main product path. New users should think about the repo as one primary flow:
 
-## Layout
+```
+decompose -> trace -> compete -> stress -> final
+```
 
-- `src/perspective_extractor/`: package source code
-- `pyproject.toml`: project metadata and CLI entry point
+The package namespace remains `perspective_extractor`.
 
-## Modules
+## Primary path: phase1 rigor engine
 
-- `models.py`: shared data models
-- `prompts.py`: prompt templates
-- `llm.py`: live stage invocation boundary (no fixture fallback)
-- `openrouter.py`: real OpenRouter chat-completion integration
-- `fixtures.py`: test/demo-only fixture helpers
-- `normalize.py`: normalization helpers
-- `knowledge.py`: knowledge retrieval stubs
-- `axes.py`: perspective-axis generation
-- `expand.py`: candidate expansion
-- `review.py`: review and filtering
-- `synthesize.py`: synthesis stage
-- `pipeline.py`: end-to-end orchestration
-- `cli.py`: command-line entry point
+The main implementation lives in `src/perspective_extractor/` and is organized
+around the phase-1 stages:
+
+- `decompose.py`: turn a question into actors, nodes, and constraints
+- `trace.py`: build an explicit consequence chain
+- `compete.py`: generate competing mechanisms and divergent predictions
+- `stress.py`: test those mechanisms against falsification and surprise ledgers
+- `final.py`: assemble the final report
+- `cli.py`: expose the phase-1 commands for direct use
+- `pipeline.py`: keep the phase-1 orchestration path as the primary pipeline
 
 ## CLI
 
-The CLI now treats a live OpenRouter-backed run as the default mode for the
-phase-1 engine. Each stage is invoked explicitly:
+The CLI only exposes the phase-1 main path by default:
 
 - `perspective-extractor decompose --model <openrouter_model> --question "..."`
 - `perspective-extractor trace --model <openrouter_model> --question "..."`
@@ -35,7 +32,7 @@ phase-1 engine. Each stage is invoked explicitly:
 - `perspective-extractor stress --model <openrouter_model> --question "..."`
 - `perspective-extractor final --model <openrouter_model> --question "..."`
 
-Additional CLI rules:
+Operational rules:
 
 - `--model` is required for live execution.
 - OpenRouter credentials must come from `--api-key` or `OPENROUTER_API_KEY`.
@@ -46,19 +43,23 @@ Additional CLI rules:
 - `--use-fixture` is an explicit deterministic test/demo path and is not the
   default behavior.
 
-## PerspectiveMap scope after v1
+## Legacy path: perspective extraction
 
-Treat the current `PerspectiveMap` as the default v1 representation, then validate it with real question samples before expanding synthesis complexity. Consider upgrading `synthesize.py` to a stronger tree / branch-comparison mechanism only if repeated reviews show that:
+The older `axes / expand / review / synthesize` flow is **not** the primary
+product path anymore. It is retained only as a compatibility layer under:
 
-- flat or lightly hierarchical branches cannot capture complex dependency relationships
-- one dominant perspective needs systematic branching under the same top-level view
-- multi-layer competitive structures are still hard to express even after review cleanup
+- `src/perspective_extractor/legacy/axes.py`
+- `src/perspective_extractor/legacy/expand.py`
+- `src/perspective_extractor/legacy/review.py`
+- `src/perspective_extractor/legacy/synthesize.py`
 
-Until those concrete failures appear, prefer keeping the existing representation simple and evidence-driven.
+That legacy flow still supports compatibility-oriented code in `pipeline.py`,
+but new feature work and user-facing guidance should start from the phase-1
+rigor engine instead of multi-perspective extraction.
 
 ## Live model requirements
 
-- CLI execution now requires an explicit `--model` unless `--use-fixture` is selected.
+- CLI execution requires an explicit `--model` unless `--use-fixture` is selected.
 - OpenRouter credentials must come from `--api-key` or `OPENROUTER_API_KEY` for live runs.
 - Demo fixtures live in `fixtures.py` and are reserved for tests/manual demos rather than the default CLI path.
 

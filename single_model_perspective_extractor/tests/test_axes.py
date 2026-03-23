@@ -1,6 +1,6 @@
 import unittest
 
-from perspective_extractor.axes import _normalize_axis_name, generate_axes
+from perspective_extractor.legacy.axes import _normalize_axis_name, generate_axes
 from perspective_extractor.models import ControversyCard, KnowledgeCard, QuestionCard, VariableCard
 
 

@@ -1,4 +1,4 @@
-"""Standalone CLI entry point for the phase-1 reasoning stages."""
+"""Standalone CLI entry point for the phase-1 rigor engine."""
 
 from __future__ import annotations
 
@@ -86,8 +86,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="perspective-extractor",
         description=(
-            "Run the dedicated phase-1 commands directly against a live OpenRouter model. "
-            "Fixture mode is opt-in for tests and demos only."
+            "Run the phase-1 rigor engine directly against a live OpenRouter model. "
+            "Legacy perspective-extraction stages are not exposed here; fixture mode is opt-in for tests and demos only."
         ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
