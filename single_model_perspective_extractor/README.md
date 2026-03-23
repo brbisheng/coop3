@@ -12,7 +12,9 @@ single-model pipeline. The package namespace is `perspective_extractor`.
 
 - `models.py`: shared data models
 - `prompts.py`: prompt templates
-- `llm.py`: LLM client abstraction
+- `llm.py`: live stage invocation boundary (no fixture fallback)
+- `openrouter.py`: real OpenRouter chat-completion integration
+- `fixtures.py`: test/demo-only fixture helpers
 - `normalize.py`: normalization helpers
 - `knowledge.py`: knowledge retrieval stubs
 - `axes.py`: perspective-axis generation
@@ -40,3 +42,9 @@ Treat the current `PerspectiveMap` as the default v1 representation, then valida
 - multi-layer competitive structures are still hard to express even after review cleanup
 
 Until those concrete failures appear, prefer keeping the existing representation simple and evidence-driven.
+
+## Live model requirements
+
+- CLI execution now requires an explicit `--model`.
+- OpenRouter credentials must come from `--api-key` or `OPENROUTER_API_KEY`.
+- Demo fixtures live in `fixtures.py` and are reserved for tests/manual demos rather than the default CLI path.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -19,6 +20,17 @@ from .trace import build_trace
 JsonDict = dict[str, Any]
 
 
+def _add_live_model_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--model",
+        help="Required OpenRouter model name for CLI execution.",
+    )
+    parser.add_argument(
+        "--api-key",
+        help="OpenRouter API key. Falls back to OPENROUTER_API_KEY when omitted.",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level CLI parser."""
 
@@ -30,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
             "without depending on the unfinished wider system."
         ),
     )
+    _add_live_model_arguments(parser)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     decompose_parser = subparsers.add_parser(
@@ -113,6 +126,19 @@ def _add_output_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _resolve_live_model_config(args: argparse.Namespace) -> tuple[str, str]:
+    model = (args.model or "").strip()
+    api_key = (args.api_key or os.environ.get("OPENROUTER_API_KEY", "")).strip()
+
+    if not model:
+        raise ValueError("Provide --model for CLI execution")
+    if not api_key:
+        raise ValueError(
+            "Provide --api-key or set OPENROUTER_API_KEY for CLI execution"
+        )
+    return model, api_key
+
+
 def _resolve_problem_text(args: argparse.Namespace) -> str:
     input_text = args.input_text.strip() if args.input_text else None
     input_file = args.input_file
@@ -183,6 +209,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        _resolve_live_model_config(args)
         problem_text = _resolve_problem_text(args)
 
         if args.command == "decompose":
