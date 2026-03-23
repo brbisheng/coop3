@@ -61,3 +61,8 @@ Until those concrete failures appear, prefer keeping the existing representation
 - CLI execution now requires an explicit `--model` unless `--use-fixture` is selected.
 - OpenRouter credentials must come from `--api-key` or `OPENROUTER_API_KEY` for live runs.
 - Demo fixtures live in `fixtures.py` and are reserved for tests/manual demos rather than the default CLI path.
+
+## Test layout
+
+- `tests/unit/` covers deterministic schema checks, prompt assembly, artifact persistence, and fake-model parsing without hitting OpenRouter.
+- `tests/integration/` contains real OpenRouter smoke tests for `decompose`, `trace`, and `final`. Those tests only run when `OPENROUTER_API_KEY` is set, and they verify that live CLI runs fail without model/key but succeed with non-empty required output when credentials are present.
