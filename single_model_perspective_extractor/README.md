@@ -26,12 +26,25 @@ single-model pipeline. The package namespace is `perspective_extractor`.
 
 ## CLI
 
-- `perspective-extractor normalize "..."`: emits a stable JSON representation of the normalized question card by default.
-- `perspective-extractor normalize "..." --format markdown`: emits a human-readable markdown summary while preserving `--format json` as the stable machine-readable mode.
-- `perspective-extractor axes "..."`: emits a readable markdown report containing the `QuestionCard`, optional knowledge / variable / controversy cards, and the generated `AxisCard` list.
-- `perspective-extractor axes "..." --format json`: emits the same card collections in JSON, while `--skip-knowledge`, `--skip-variables`, and `--skip-controversies` suppress optional supporting cards.
-- `perspective-extractor run "..."`: emits the full `PipelineResult` JSON trace by default, preserving normalized question, support cards, axes, raw notes, review decisions, review partitions, and the synthesized perspective map rather than only the final summary.
-- `perspective-extractor run "..." --format markdown`: wraps that same stable JSON export in a markdown code block so a future human-oriented export can evolve without changing JSON as the primary machine-readable contract.
+The CLI now treats a live OpenRouter-backed run as the default mode for the
+phase-1 engine. Each stage is invoked explicitly:
+
+- `perspective-extractor decompose --model <openrouter_model> --question "..."`
+- `perspective-extractor trace --model <openrouter_model> --question "..."`
+- `perspective-extractor compete --model <openrouter_model> --question "..."`
+- `perspective-extractor stress --model <openrouter_model> --question "..."`
+- `perspective-extractor final --model <openrouter_model> --question "..."`
+
+Additional CLI rules:
+
+- `--model` is required for live execution.
+- OpenRouter credentials must come from `--api-key` or `OPENROUTER_API_KEY`.
+- `--question` or `--input-file` is required for every command.
+- `--output` writes the rendered artifact to disk.
+- `--format json` remains the default, while `--format markdown` writes a
+  markdown artifact that embeds the structured JSON payload.
+- `--use-fixture` is an explicit deterministic test/demo path and is not the
+  default behavior.
 
 ## PerspectiveMap scope after v1
 
@@ -45,6 +58,6 @@ Until those concrete failures appear, prefer keeping the existing representation
 
 ## Live model requirements
 
-- CLI execution now requires an explicit `--model`.
-- OpenRouter credentials must come from `--api-key` or `OPENROUTER_API_KEY`.
+- CLI execution now requires an explicit `--model` unless `--use-fixture` is selected.
+- OpenRouter credentials must come from `--api-key` or `OPENROUTER_API_KEY` for live runs.
 - Demo fixtures live in `fixtures.py` and are reserved for tests/manual demos rather than the default CLI path.

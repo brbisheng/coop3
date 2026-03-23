@@ -85,11 +85,12 @@ class DecomposeCliTests(_PatchedCliTestCase):
         with redirect_stdout(buffer):
             exit_code = cli.main(
                 [
+                    "decompose",
                     "--model",
                     "openrouter/test-model",
                     "--api-key",
                     "test-key",
-                    "decompose",
+                    "--question",
                     self.problem_text,
                 ]
             )
@@ -112,11 +113,11 @@ class DecomposeCliTests(_PatchedCliTestCase):
             with redirect_stdout(buffer):
                 exit_code = cli.main(
                     [
+                        "decompose",
                         "--model",
                         "openrouter/test-model",
                         "--api-key",
                         "test-key",
-                        "decompose",
                         "--input-file",
                         str(input_path),
                         "--output",
@@ -137,11 +138,12 @@ class TraceCliTests(_PatchedCliTestCase):
         with redirect_stdout(buffer):
             exit_code = cli.main(
                 [
+                    "trace",
                     "--model",
                     "openrouter/test-model",
                     "--api-key",
                     "test-key",
-                    "trace",
+                    "--question",
                     self.problem_text,
                 ]
             )
@@ -160,11 +162,12 @@ class CompeteCliTests(_PatchedCliTestCase):
         with redirect_stdout(buffer):
             exit_code = cli.main(
                 [
+                    "compete",
                     "--model",
                     "openrouter/test-model",
                     "--api-key",
                     "test-key",
-                    "compete",
+                    "--question",
                     self.problem_text,
                 ]
             )
@@ -186,11 +189,12 @@ class StressCliTests(_PatchedCliTestCase):
         with redirect_stdout(buffer):
             exit_code = cli.main(
                 [
+                    "stress",
                     "--model",
                     "openrouter/test-model",
                     "--api-key",
                     "test-key",
-                    "stress",
+                    "--question",
                     self.problem_text,
                 ]
             )
@@ -210,11 +214,12 @@ class FinalCliTests(_PatchedCliTestCase):
         with redirect_stdout(buffer):
             exit_code = cli.main(
                 [
+                    "final",
                     "--model",
                     "openrouter/test-model",
                     "--api-key",
                     "test-key",
-                    "final",
+                    "--question",
                     self.problem_text,
                 ]
             )
@@ -235,10 +240,75 @@ class CliModelConfigTests(_PatchedCliTestCase):
         stderr = io.StringIO()
 
         with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
-            exit_code = cli.main(["decompose", "How does remote work affect productivity?"])
+            exit_code = cli.main(["decompose", "--question", "How does remote work affect productivity?"])
 
         self.assertEqual(exit_code, 2)
         self.assertIn("Provide --model", stderr.getvalue())
+
+
+    def test_cli_requires_api_key_for_live_execution(self) -> None:
+        stderr = io.StringIO()
+        previous_api_key = os.environ.get("OPENROUTER_API_KEY")
+        os.environ.pop("OPENROUTER_API_KEY", None)
+        try:
+            with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+                exit_code = cli.main(
+                    [
+                        "decompose",
+                        "--model",
+                        "openrouter/test-model",
+                        "--question",
+                        "How does remote work affect productivity?",
+                    ]
+                )
+        finally:
+            if previous_api_key is not None:
+                os.environ["OPENROUTER_API_KEY"] = previous_api_key
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("OPENROUTER_API_KEY", stderr.getvalue())
+
+    def test_cli_fixture_mode_is_explicit_and_does_not_require_live_credentials(self) -> None:
+        buffer = io.StringIO()
+
+        with redirect_stdout(buffer):
+            exit_code = cli.main(
+                [
+                    "decompose",
+                    "--use-fixture",
+                    "--question",
+                    self.problem_text,
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(buffer.getvalue())
+        self.assertIn("problem_frame", payload)
+
+    def test_cli_can_emit_markdown_artifact(self) -> None:
+        buffer = io.StringIO()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_path = Path(tmp_dir) / "artifacts" / "trace.md"
+            with redirect_stdout(buffer):
+                exit_code = cli.main(
+                    [
+                        "trace",
+                        "--use-fixture",
+                        "--question",
+                        self.problem_text,
+                        "--format",
+                        "markdown",
+                        "--output",
+                        str(output_path),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            rendered = buffer.getvalue()
+            self.assertIn("# perspective-extractor trace", rendered)
+            self.assertIn("```json", rendered)
+            self.assertEqual(output_path.read_text(encoding="utf-8").strip(), rendered.strip())
 
     def test_cli_accepts_api_key_from_environment(self) -> None:
         buffer = io.StringIO()
@@ -248,9 +318,10 @@ class CliModelConfigTests(_PatchedCliTestCase):
             with redirect_stdout(buffer):
                 exit_code = cli.main(
                     [
+                        "decompose",
                         "--model",
                         "openrouter/test-model",
-                        "decompose",
+                        "--question",
                         self.problem_text,
                     ]
                 )
