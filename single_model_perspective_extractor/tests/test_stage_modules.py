@@ -3,6 +3,12 @@ import unittest
 
 from perspective_extractor.axes_stage import build_axes_stage_prompt, run_axes_stage
 from perspective_extractor.expand_stage import build_expand_stage_prompt, run_expand_stage
+from perspective_extractor.fixtures import (
+    build_axes_stage_fixture,
+    build_expand_stage_fixture,
+    build_normalize_stage_fixture,
+)
+from perspective_extractor.llm import ModelInvocationError
 from perspective_extractor.normalize_stage import build_normalize_stage_prompt, run_normalize_stage
 from perspective_extractor.models import AxisCard, KnowledgeCard, QuestionCard, VariableCard
 
@@ -35,8 +41,14 @@ class StageModuleTests(unittest.TestCase):
             definition="How much remote work is used.",
         )
 
-    def test_run_normalize_stage_uses_fixed_demo_fixture_when_no_model_is_supplied(self) -> None:
-        result = json.loads(run_normalize_stage("How does remote work affect employee productivity?"))
+    def test_run_normalize_stage_requires_an_explicit_live_model(self) -> None:
+        with self.assertRaises(ModelInvocationError):
+            run_normalize_stage("How does remote work affect employee productivity?")
+
+    def test_normalize_stage_fixture_is_available_only_via_fixture_helpers(self) -> None:
+        result = json.loads(
+            build_normalize_stage_fixture("How does remote work affect employee productivity?")
+        )
 
         self.assertEqual(result["raw_question"], "How does remote work affect employee productivity?")
         self.assertEqual(result["actor_entity"], "demo actor")
@@ -76,7 +88,13 @@ class StageModuleTests(unittest.TestCase):
             variable_cards=[self.variable_card],
         )
 
-        result = json.loads(stage_prompt.demo_response)
+        result = json.loads(
+            build_axes_stage_fixture(
+                self.question_card,
+                knowledge_cards=[self.knowledge_card],
+                variable_cards=[self.variable_card],
+            )
+        )
 
         self.assertEqual(stage_prompt.stage_name, "axes")
         self.assertEqual(len(result["axes"]), 8)
@@ -89,7 +107,7 @@ class StageModuleTests(unittest.TestCase):
             context_cards=[self.knowledge_card, self.variable_card],
         )
         result = json.loads(
-            run_expand_stage(
+            build_expand_stage_fixture(
                 self.question_card,
                 self.axis_card,
                 context_cards=[self.knowledge_card, self.variable_card],

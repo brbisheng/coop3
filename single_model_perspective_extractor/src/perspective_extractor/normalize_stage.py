@@ -1,8 +1,6 @@
-"""Explicit normalize-stage prompt and demo fixture."""
+"""Explicit normalize-stage prompt builder."""
 
 from __future__ import annotations
-
-import json
 
 from .llm import StageModelCaller, StagePrompt, invoke_stage_prompt
 
@@ -31,27 +29,11 @@ Question:
 
 
 def build_normalize_stage_prompt(question: str) -> StagePrompt:
-    """Return the full normalize-stage prompt and its fixed demo response."""
+    """Return the full normalize-stage prompt for a live model call."""
 
-    cleaned_question = " ".join(question.split()) or "How does the focal actor affect the focal outcome?"
-    demo_response = {
-        "raw_question": question,
-        "cleaned_question": cleaned_question,
-        "actor_entity": "demo actor",
-        "outcome_variable": "demo outcome",
-        "assumptions": ["The wording implies a relationship worth testing."],
-        "domain_hint": "demo domain",
-        "keywords": ["demo actor", "demo outcome"],
-        "missing_pieces": [
-            "Target population is not specified.",
-            "Time frame is not specified.",
-            "Geographic scope is not specified.",
-        ],
-    }
     return StagePrompt(
         stage_name="normalize",
         prompt=_NORMALIZE_STAGE_PROMPT.format(question=question),
-        demo_response=json.dumps(demo_response, indent=2, ensure_ascii=False, sort_keys=True),
     )
 
 
@@ -60,7 +42,7 @@ def run_normalize_stage(
     *,
     call_model: StageModelCaller | None = None,
 ) -> str:
-    """Run the normalize-stage prompt or return the fixed demo fixture."""
+    """Run the normalize-stage prompt with an explicit live model caller."""
 
     return invoke_stage_prompt(
         build_normalize_stage_prompt(question),

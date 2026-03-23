@@ -1,8 +1,9 @@
 import io
 import json
+import os
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from perspective_extractor import cli
@@ -15,6 +16,10 @@ class DecomposeCliTests(unittest.TestCase):
         with redirect_stdout(buffer):
             exit_code = cli.main(
                 [
+                    "--model",
+                    "openrouter/test-model",
+                    "--api-key",
+                    "test-key",
                     "decompose",
                     "How would a shutdown at the main import terminal affect regional fuel supply?",
                 ]
@@ -41,6 +46,10 @@ class DecomposeCliTests(unittest.TestCase):
             with redirect_stdout(buffer):
                 exit_code = cli.main(
                     [
+                        "--model",
+                        "openrouter/test-model",
+                        "--api-key",
+                        "test-key",
                         "decompose",
                         "--input-file",
                         str(input_path),
@@ -62,6 +71,10 @@ class TraceCliTests(unittest.TestCase):
         with redirect_stdout(buffer):
             exit_code = cli.main(
                 [
+                    "--model",
+                    "openrouter/test-model",
+                    "--api-key",
+                    "test-key",
                     "trace",
                     "How would a shutdown at the main import terminal affect regional fuel supply?",
                 ]
@@ -81,6 +94,10 @@ class CompeteCliTests(unittest.TestCase):
         with redirect_stdout(buffer):
             exit_code = cli.main(
                 [
+                    "--model",
+                    "openrouter/test-model",
+                    "--api-key",
+                    "test-key",
                     "compete",
                     "How would a shutdown at the main import terminal affect regional fuel supply?",
                 ]
@@ -103,6 +120,10 @@ class StressCliTests(unittest.TestCase):
         with redirect_stdout(buffer):
             exit_code = cli.main(
                 [
+                    "--model",
+                    "openrouter/test-model",
+                    "--api-key",
+                    "test-key",
                     "stress",
                     "How would a shutdown at the main import terminal affect regional fuel supply?",
                 ]
@@ -123,6 +144,10 @@ class FinalCliTests(unittest.TestCase):
         with redirect_stdout(buffer):
             exit_code = cli.main(
                 [
+                    "--model",
+                    "openrouter/test-model",
+                    "--api-key",
+                    "test-key",
                     "final",
                     "How would a shutdown at the main import terminal affect regional fuel supply?",
                 ]
@@ -137,6 +162,41 @@ class FinalCliTests(unittest.TestCase):
         self.assertIn("main_uncertainties_and_hidden_assumptions", payload)
         self.assertIn("executive_summary", payload)
         self.assertEqual(len(payload["critical_mechanism_chains"]), 3)
+
+
+class CliModelConfigTests(unittest.TestCase):
+    def test_cli_requires_model(self) -> None:
+        stderr = io.StringIO()
+
+        with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+            exit_code = cli.main(["decompose", "How does remote work affect productivity?"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("Provide --model", stderr.getvalue())
+
+    def test_cli_accepts_api_key_from_environment(self) -> None:
+        buffer = io.StringIO()
+        previous_api_key = os.environ.get("OPENROUTER_API_KEY")
+        os.environ["OPENROUTER_API_KEY"] = "env-test-key"
+        try:
+            with redirect_stdout(buffer):
+                exit_code = cli.main(
+                    [
+                        "--model",
+                        "openrouter/test-model",
+                        "decompose",
+                        "How would a shutdown at the main import terminal affect regional fuel supply?",
+                    ]
+                )
+        finally:
+            if previous_api_key is None:
+                os.environ.pop("OPENROUTER_API_KEY", None)
+            else:
+                os.environ["OPENROUTER_API_KEY"] = previous_api_key
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(buffer.getvalue())
+        self.assertIn("problem_frame", payload)
 
 
 if __name__ == "__main__":
