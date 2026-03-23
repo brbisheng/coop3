@@ -1,4 +1,4 @@
-"""Review helpers for extracted perspectives."""
+"""Legacy review helpers retained for compatibility only."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Iterable
 
-from .models import PerspectiveNote, PerspectiveRecord, QuestionCard, ReviewDecision
+from ..models import PerspectiveNote, PerspectiveRecord, QuestionCard, ReviewDecision
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
 _STOPWORDS = {

@@ -1,4 +1,4 @@
-"""End-to-end pipeline orchestration."""
+"""End-to-end pipeline orchestration with a phase-1 primary path and legacy compatibility flow."""
 
 from __future__ import annotations
 
@@ -34,10 +34,10 @@ from .knowledge import (
     generate_knowledge_cards,
     generate_variable_cards,
 )
-from .review import review_notes as review_note_decisions, review_records
-from .synthesize import synthesize_map, synthesize_summary
-from .axes import generate_axes
-from .expand import expand_axis as expand_axis_note
+from .legacy.review import review_notes as review_note_decisions, review_records
+from .legacy.synthesize import synthesize_map, synthesize_summary
+from .legacy.axes import generate_axes
+from .legacy.expand import expand_axis as expand_axis_note
 from .prompts import PromptVariant, resolve_prompt_variant
 
 
@@ -511,7 +511,7 @@ def run_phase1_pipeline(
 
 
 class PerspectiveExtractionPipeline:
-    """Backward-compatible orchestrator for the earlier scaffold interface."""
+    """Backward-compatible orchestrator for the legacy perspective-extraction scaffold."""
 
     def run(
         self,

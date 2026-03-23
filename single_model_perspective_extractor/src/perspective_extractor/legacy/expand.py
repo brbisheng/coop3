@@ -1,10 +1,10 @@
-"""Expansion helpers for isolated single-axis perspective notes."""
+"""Legacy expansion helpers retained for compatibility only."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from .models import (
+from ..models import (
     AxisCard,
     ControversyCard,
     KnowledgeCard,

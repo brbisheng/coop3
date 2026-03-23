@@ -1,4 +1,4 @@
-"""Perspective axis generation."""
+"""Legacy perspective-axis generation retained for compatibility only."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 
-from .models import AxisCard, ControversyCard, KnowledgeCard, QuestionCard, VariableCard
+from ..models import AxisCard, ControversyCard, KnowledgeCard, QuestionCard, VariableCard
 
 _AXIS_GENERATION_PROMPT = """Generate perspective axes for the research question below.
 

@@ -1,6 +1,6 @@
 import unittest
 
-from perspective_extractor.expand import (
+from perspective_extractor.legacy.expand import (
     compose_perspective_note_from_subanswers,
     expand_axis,
     plan_axis_subquestions,

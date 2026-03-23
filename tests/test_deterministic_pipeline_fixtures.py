@@ -7,8 +7,8 @@ import pytest
 
 from perspective_extractor.models import PerspectiveMap
 from perspective_extractor.pipeline import expand_axes, run_pipeline
-from perspective_extractor.review import review_notes
-from perspective_extractor.synthesize import synthesize_map
+from perspective_extractor.legacy.review import review_notes
+from perspective_extractor.legacy.synthesize import synthesize_map
 
 
 def _required_text_fields(instance: object) -> list[str]:

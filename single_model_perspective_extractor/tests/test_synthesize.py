@@ -1,7 +1,7 @@
 import unittest
 
 from perspective_extractor.models import PerspectiveNote, QuestionCard, ReviewDecision
-from perspective_extractor.synthesize import synthesize_map
+from perspective_extractor.legacy.synthesize import synthesize_map
 
 
 class SynthesizeMapTests(unittest.TestCase):
