@@ -10,11 +10,11 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Sequence
 
-from .compete import build_competing_mechanisms
-from .decompose import decompose_problem
-from .final import build_final_report
-from .stress import build_stress_test
-from .trace import build_trace
+from .compete import run_compete
+from .decompose import run_decompose
+from .final import run_final
+from .stress import run_stress
+from .trace import run_trace
 
 
 JsonDict = dict[str, Any]
@@ -165,41 +165,34 @@ def _emit_payload(payload: JsonDict, *, output_path: Path | None) -> None:
         output_path.write_text(rendered + "\n", encoding="utf-8")
 
 
-def _decompose_payload(problem_text: str) -> JsonDict:
-    return asdict(decompose_problem(problem_text))
+def _decompose_payload(problem_text: str, *, model: str, api_key: str) -> JsonDict:
+    return asdict(run_decompose(problem_text, model=model, api_key=api_key))
 
 
-def _trace_payload(problem_text: str, *, trace_target: str | None = None) -> JsonDict:
-    decompose_result = decompose_problem(problem_text)
-    return asdict(build_trace(decompose_result, trace_target=trace_target))
+def _trace_payload(problem_text: str, *, model: str, api_key: str, trace_target: str | None = None) -> JsonDict:
+    decompose_result = run_decompose(problem_text, model=model, api_key=api_key)
+    return asdict(run_trace(decompose_result, trace_target=trace_target, model=model, api_key=api_key))
 
 
-def _compete_payload(problem_text: str, *, trace_target: str | None = None) -> JsonDict:
-    decompose_result = decompose_problem(problem_text)
-    trace_result = build_trace(decompose_result, trace_target=trace_target)
-    return asdict(build_competing_mechanisms(decompose_result, trace_result))
+def _compete_payload(problem_text: str, *, model: str, api_key: str, trace_target: str | None = None) -> JsonDict:
+    decompose_result = run_decompose(problem_text, model=model, api_key=api_key)
+    trace_result = run_trace(decompose_result, trace_target=trace_target, model=model, api_key=api_key)
+    return asdict(run_compete(decompose_result, trace_result, model=model, api_key=api_key))
 
 
-def _stress_payload(problem_text: str, *, trace_target: str | None = None) -> JsonDict:
-    decompose_result = decompose_problem(problem_text)
-    trace_result = build_trace(decompose_result, trace_target=trace_target)
-    compete_result = build_competing_mechanisms(decompose_result, trace_result)
-    return asdict(build_stress_test(decompose_result, trace_result, compete_result))
+def _stress_payload(problem_text: str, *, model: str, api_key: str, trace_target: str | None = None) -> JsonDict:
+    decompose_result = run_decompose(problem_text, model=model, api_key=api_key)
+    trace_result = run_trace(decompose_result, trace_target=trace_target, model=model, api_key=api_key)
+    compete_result = run_compete(decompose_result, trace_result, model=model, api_key=api_key)
+    return asdict(run_stress(decompose_result, trace_result, compete_result, model=model, api_key=api_key))
 
 
-def _final_payload(problem_text: str, *, trace_target: str | None = None) -> JsonDict:
-    decompose_result = decompose_problem(problem_text)
-    trace_result = build_trace(decompose_result, trace_target=trace_target)
-    compete_result = build_competing_mechanisms(decompose_result, trace_result)
-    stress_result = build_stress_test(decompose_result, trace_result, compete_result)
-    return asdict(
-        build_final_report(
-            decompose_result,
-            trace_result,
-            compete_result,
-            stress_result,
-        )
-    )
+def _final_payload(problem_text: str, *, model: str, api_key: str, trace_target: str | None = None) -> JsonDict:
+    decompose_result = run_decompose(problem_text, model=model, api_key=api_key)
+    trace_result = run_trace(decompose_result, trace_target=trace_target, model=model, api_key=api_key)
+    compete_result = run_compete(decompose_result, trace_result, model=model, api_key=api_key)
+    stress_result = run_stress(decompose_result, trace_result, compete_result, model=model, api_key=api_key)
+    return asdict(run_final(decompose_result, trace_result, compete_result, stress_result, model=model, api_key=api_key))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -209,19 +202,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        _resolve_live_model_config(args)
+        model, api_key = _resolve_live_model_config(args)
         problem_text = _resolve_problem_text(args)
 
         if args.command == "decompose":
-            payload = _decompose_payload(problem_text)
+            payload = _decompose_payload(problem_text, model=model, api_key=api_key)
         elif args.command == "trace":
-            payload = _trace_payload(problem_text, trace_target=args.trace_target)
+            payload = _trace_payload(problem_text, model=model, api_key=api_key, trace_target=args.trace_target)
         elif args.command == "compete":
-            payload = _compete_payload(problem_text, trace_target=args.trace_target)
+            payload = _compete_payload(problem_text, model=model, api_key=api_key, trace_target=args.trace_target)
         elif args.command == "stress":
-            payload = _stress_payload(problem_text, trace_target=args.trace_target)
+            payload = _stress_payload(problem_text, model=model, api_key=api_key, trace_target=args.trace_target)
         elif args.command == "final":
-            payload = _final_payload(problem_text, trace_target=args.trace_target)
+            payload = _final_payload(problem_text, model=model, api_key=api_key, trace_target=args.trace_target)
         else:
             parser.error(f"Unknown command: {args.command}")
             return 2

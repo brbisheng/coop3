@@ -2,14 +2,47 @@
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Iterable
+from dataclasses import asdict
 
 from .models import CompeteResult, CompetingMechanism, DecomposeResult, TraceResult
-
+from .openrouter import call_openrouter
 
 _GENERIC_CONSTRAINT = "binding operational constraints"
 _GENERIC_ACTOR = "the lead actor"
 _GENERIC_NODE = "the focal node"
+
+COMPETE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "competing_mechanisms": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string"},
+                    "core_mechanism": {"type": "string"},
+                    "what_it_explains": {"type": "string"},
+                    "prediction": {"type": "string"},
+                    "observable_signal": {"type": "string"},
+                },
+                "required": [
+                    "label",
+                    "core_mechanism",
+                    "what_it_explains",
+                    "prediction",
+                    "observable_signal",
+                ],
+            },
+            "minItems": 2,
+            "maxItems": 2,
+        },
+        "divergence_note": {"type": "string"},
+    },
+    "required": ["competing_mechanisms", "divergence_note"],
+}
 
 
 def build_competing_mechanisms(
@@ -18,8 +51,14 @@ def build_competing_mechanisms(
 ) -> CompeteResult:
     """Generate exactly two competing mechanism cards with divergent predictions."""
 
-    actor_name = _first_or_fallback((actor.name for actor in decompose_result.actor_cards), _GENERIC_ACTOR)
-    node_name = _first_or_fallback((node.name for node in decompose_result.node_cards), _GENERIC_NODE)
+    actor_name = _first_or_fallback(
+        (actor.name for actor in decompose_result.actor_cards),
+        _GENERIC_ACTOR,
+    )
+    node_name = _first_or_fallback(
+        (node.name for node in decompose_result.node_cards),
+        _GENERIC_NODE,
+    )
     constraint = _first_or_fallback(
         (constraint.constraint for constraint in decompose_result.constraint_cards),
         _GENERIC_CONSTRAINT,
@@ -73,6 +112,55 @@ build_compete = build_competing_mechanisms
 generate_competing_mechanisms = build_competing_mechanisms
 
 
+def build_compete_prompt(
+    decompose_result: DecomposeResult,
+    trace_result: TraceResult,
+) -> str:
+    """Return the live compete-stage prompt."""
+
+    return (
+        "You are running the phase-1 rigor pipeline compete stage. Return JSON only and no markdown.\n\n"
+        "Task: produce exactly two competing mechanisms with divergent predictions and observable signals.\n\n"
+        f"Schema:\n{json.dumps(COMPETE_SCHEMA, indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
+        "Rules:\n"
+        "- The two mechanisms must disagree in a materially testable way.\n"
+        "- Keep the mechanisms anchored in the supplied decompose and trace artifacts.\n"
+        "- Do not emit more than two competing mechanisms.\n\n"
+        "Decompose artifact:\n"
+        f"{json.dumps(asdict(decompose_result), indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
+        "Trace artifact:\n"
+        f"{json.dumps(asdict(trace_result), indent=2, ensure_ascii=False, sort_keys=True)}\n"
+    )
+
+
+def run_compete(
+    decompose_result: DecomposeResult,
+    trace_result: TraceResult,
+    *,
+    model: str,
+    api_key: str,
+) -> CompeteResult:
+    """Run the live compete stage directly from this module."""
+
+    response_text = call_openrouter(
+        api_key=api_key,
+        model=model,
+        messages=[
+            {"role": "system", "content": "Return strict JSON for the requested schema only."},
+            {"role": "user", "content": build_compete_prompt(decompose_result, trace_result)},
+        ],
+        temperature=0.0,
+        max_tokens=2200,
+    )
+    payload = _load_json_object(response_text, stage_name="compete")
+    return CompeteResult(
+        competing_mechanisms=[
+            CompetingMechanism(**item) for item in payload["competing_mechanisms"]
+        ],
+        divergence_note=payload["divergence_note"],
+    )
+
+
 def _first_or_fallback(values: Iterable[str], fallback: str) -> str:
     for value in values:
         cleaned = value.strip()
@@ -81,8 +169,22 @@ def _first_or_fallback(values: Iterable[str], fallback: str) -> str:
     return fallback
 
 
+def _load_json_object(response_text: str, *, stage_name: str) -> dict[str, object]:
+    cleaned = response_text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    payload = json.loads(cleaned)
+    if not isinstance(payload, dict):
+        raise ValueError(f"{stage_name} must return a JSON object")
+    return payload
+
+
 __all__ = [
+    "COMPETE_SCHEMA",
     "build_compete",
+    "build_compete_prompt",
     "build_competing_mechanisms",
     "generate_competing_mechanisms",
+    "run_compete",
 ]

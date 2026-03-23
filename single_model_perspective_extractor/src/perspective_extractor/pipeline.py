@@ -22,11 +22,11 @@ from .models import (
     TraceResult,
     VariableCard,
 )
-from .decompose import decompose_problem
-from .trace import build_trace
-from .compete import build_competing_mechanisms
-from .stress import build_stress_test
-from .final import build_final_report
+from .decompose import decompose_problem, run_decompose
+from .trace import build_trace, run_trace
+from .compete import build_competing_mechanisms, run_compete
+from .stress import build_stress_test, run_stress
+from .final import build_final_report, run_final
 from .normalize import normalize_question, normalize_text
 from .knowledge import (
     collect_background,
@@ -443,29 +443,64 @@ def run_phase1_pipeline(
     problem_text: str,
     *,
     trace_target: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
 ) -> Phase1PipelineArtifacts:
     """Run the dedicated phase-1 decompose→trace→compete→stress→final path."""
 
-    decompose_result = decompose_problem(problem_text)
-    trace_result = build_trace(
-        decompose_result,
-        trace_target=trace_target,
-    )
-    compete_result = build_competing_mechanisms(
-        decompose_result,
-        trace_result,
-    )
-    stress_result = build_stress_test(
-        decompose_result,
-        trace_result,
-        compete_result,
-    )
-    final_report = build_final_report(
-        decompose_result,
-        trace_result,
-        compete_result,
-        stress_result,
-    )
+    use_live_model = model is not None or api_key is not None
+    if use_live_model:
+        if not model or not api_key:
+            raise ValueError("model and api_key are both required for live phase-1 execution")
+        decompose_result = run_decompose(problem_text, model=model, api_key=api_key)
+        trace_result = run_trace(
+            decompose_result,
+            trace_target=trace_target,
+            model=model,
+            api_key=api_key,
+        )
+        compete_result = run_compete(
+            decompose_result,
+            trace_result,
+            model=model,
+            api_key=api_key,
+        )
+        stress_result = run_stress(
+            decompose_result,
+            trace_result,
+            compete_result,
+            model=model,
+            api_key=api_key,
+        )
+        final_report = run_final(
+            decompose_result,
+            trace_result,
+            compete_result,
+            stress_result,
+            model=model,
+            api_key=api_key,
+        )
+    else:
+        decompose_result = decompose_problem(problem_text)
+        trace_result = build_trace(
+            decompose_result,
+            trace_target=trace_target,
+        )
+        compete_result = build_competing_mechanisms(
+            decompose_result,
+            trace_result,
+        )
+        stress_result = build_stress_test(
+            decompose_result,
+            trace_result,
+            compete_result,
+        )
+        final_report = build_final_report(
+            decompose_result,
+            trace_result,
+            compete_result,
+            stress_result,
+        )
     return Phase1PipelineArtifacts(
         decompose_result=decompose_result,
         trace_result=trace_result,

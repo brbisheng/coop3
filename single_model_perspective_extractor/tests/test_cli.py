@@ -5,11 +5,80 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from perspective_extractor import cli
+from perspective_extractor.compete import build_competing_mechanisms
+from perspective_extractor.decompose import decompose_problem
+from perspective_extractor.final import build_final_report
+from perspective_extractor.stress import build_stress_test
+from perspective_extractor.trace import build_trace
 
 
-class DecomposeCliTests(unittest.TestCase):
+class _PatchedCliTestCase(unittest.TestCase):
+    def setUp(self) -> None:
+        self.problem_text = (
+            "How would a shutdown at the main import terminal affect regional fuel supply?"
+        )
+        self.decompose_result = decompose_problem(self.problem_text)
+        self.trace_result = build_trace(self.decompose_result)
+        self.compete_result = build_competing_mechanisms(self.decompose_result, self.trace_result)
+        self.stress_result = build_stress_test(
+            self.decompose_result,
+            self.trace_result,
+            self.compete_result,
+        )
+        self.final_report = build_final_report(
+            self.decompose_result,
+            self.trace_result,
+            self.compete_result,
+            self.stress_result,
+        )
+
+        self.patchers = [
+            patch.object(cli, "run_decompose", side_effect=lambda problem_text, **_: decompose_problem(problem_text)),
+            patch.object(
+                cli,
+                "run_trace",
+                side_effect=lambda decompose_result, **kwargs: build_trace(
+                    decompose_result,
+                    trace_target=kwargs.get("trace_target"),
+                ),
+            ),
+            patch.object(
+                cli,
+                "run_compete",
+                side_effect=lambda decompose_result, trace_result, **_: build_competing_mechanisms(
+                    decompose_result,
+                    trace_result,
+                ),
+            ),
+            patch.object(
+                cli,
+                "run_stress",
+                side_effect=lambda decompose_result, trace_result, compete_result, **_: build_stress_test(
+                    decompose_result,
+                    trace_result,
+                    compete_result,
+                ),
+            ),
+            patch.object(
+                cli,
+                "run_final",
+                side_effect=lambda decompose_result, trace_result, compete_result, stress_result, **_: build_final_report(
+                    decompose_result,
+                    trace_result,
+                    compete_result,
+                    stress_result,
+                ),
+            ),
+        ]
+        for patcher in self.patchers:
+            patcher.start()
+        self.addCleanup(lambda: [patcher.stop() for patcher in reversed(self.patchers)])
+
+
+class DecomposeCliTests(_PatchedCliTestCase):
     def test_decompose_defaults_to_json_output(self) -> None:
         buffer = io.StringIO()
 
@@ -21,7 +90,7 @@ class DecomposeCliTests(unittest.TestCase):
                     "--api-key",
                     "test-key",
                     "decompose",
-                    "How would a shutdown at the main import terminal affect regional fuel supply?",
+                    self.problem_text,
                 ]
             )
 
@@ -37,10 +106,7 @@ class DecomposeCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             input_path = Path(tmp_dir) / "problem.txt"
             output_path = Path(tmp_dir) / "artifacts" / "decompose.json"
-            input_path.write_text(
-                "How would a shutdown at the main import terminal affect regional fuel supply?",
-                encoding="utf-8",
-            )
+            input_path.write_text(self.problem_text, encoding="utf-8")
             buffer = io.StringIO()
 
             with redirect_stdout(buffer):
@@ -64,7 +130,7 @@ class DecomposeCliTests(unittest.TestCase):
             self.assertEqual(saved_payload, printed_payload)
 
 
-class TraceCliTests(unittest.TestCase):
+class TraceCliTests(_PatchedCliTestCase):
     def test_trace_defaults_to_json_with_explicit_chain(self) -> None:
         buffer = io.StringIO()
 
@@ -76,7 +142,7 @@ class TraceCliTests(unittest.TestCase):
                     "--api-key",
                     "test-key",
                     "trace",
-                    "How would a shutdown at the main import terminal affect regional fuel supply?",
+                    self.problem_text,
                 ]
             )
 
@@ -87,7 +153,7 @@ class TraceCliTests(unittest.TestCase):
         self.assertTrue(all(step["mechanism"] for step in payload["consequence_chain"]))
 
 
-class CompeteCliTests(unittest.TestCase):
+class CompeteCliTests(_PatchedCliTestCase):
     def test_compete_defaults_to_json_with_two_divergent_mechanisms(self) -> None:
         buffer = io.StringIO()
 
@@ -99,7 +165,7 @@ class CompeteCliTests(unittest.TestCase):
                     "--api-key",
                     "test-key",
                     "compete",
-                    "How would a shutdown at the main import terminal affect regional fuel supply?",
+                    self.problem_text,
                 ]
             )
 
@@ -113,7 +179,7 @@ class CompeteCliTests(unittest.TestCase):
         )
 
 
-class StressCliTests(unittest.TestCase):
+class StressCliTests(_PatchedCliTestCase):
     def test_stress_defaults_to_json_with_ledgers(self) -> None:
         buffer = io.StringIO()
 
@@ -125,7 +191,7 @@ class StressCliTests(unittest.TestCase):
                     "--api-key",
                     "test-key",
                     "stress",
-                    "How would a shutdown at the main import terminal affect regional fuel supply?",
+                    self.problem_text,
                 ]
             )
 
@@ -137,7 +203,7 @@ class StressCliTests(unittest.TestCase):
         self.assertTrue(payload["surprise_ledger"][0]["surprise"])
 
 
-class FinalCliTests(unittest.TestCase):
+class FinalCliTests(_PatchedCliTestCase):
     def test_final_defaults_to_json_with_dense_report_sections(self) -> None:
         buffer = io.StringIO()
 
@@ -149,7 +215,7 @@ class FinalCliTests(unittest.TestCase):
                     "--api-key",
                     "test-key",
                     "final",
-                    "How would a shutdown at the main import terminal affect regional fuel supply?",
+                    self.problem_text,
                 ]
             )
 
@@ -164,7 +230,7 @@ class FinalCliTests(unittest.TestCase):
         self.assertEqual(len(payload["critical_mechanism_chains"]), 3)
 
 
-class CliModelConfigTests(unittest.TestCase):
+class CliModelConfigTests(_PatchedCliTestCase):
     def test_cli_requires_model(self) -> None:
         stderr = io.StringIO()
 
@@ -185,7 +251,7 @@ class CliModelConfigTests(unittest.TestCase):
                         "--model",
                         "openrouter/test-model",
                         "decompose",
-                        "How would a shutdown at the main import terminal affect regional fuel supply?",
+                        self.problem_text,
                     ]
                 )
         finally:

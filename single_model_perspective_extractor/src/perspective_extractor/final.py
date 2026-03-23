@@ -2,10 +2,40 @@
 
 from __future__ import annotations
 
-from .models import CompeteResult, DecomposeResult, FinalReport, StressResult, TraceResult
+import json
+import re
+from dataclasses import asdict
 
+from .models import CompeteResult, DecomposeResult, FinalReport, StressResult, TraceResult
+from .openrouter import call_openrouter
 
 _GENERIC_TARGET = "the focal problem"
+
+FINAL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "key_actors_and_nodes": {"type": "array", "items": {"type": "string"}},
+        "critical_mechanism_chains": {"type": "array", "items": {"type": "string"}},
+        "competing_explanations_and_divergent_predictions": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "likely_surprises": {"type": "array", "items": {"type": "string"}},
+        "main_uncertainties_and_hidden_assumptions": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "executive_summary": {"type": "string"},
+    },
+    "required": [
+        "key_actors_and_nodes",
+        "critical_mechanism_chains",
+        "competing_explanations_and_divergent_predictions",
+        "likely_surprises",
+        "main_uncertainties_and_hidden_assumptions",
+        "executive_summary",
+    ],
+}
 
 
 def build_final_report(
@@ -88,6 +118,66 @@ build_final = build_final_report
 assemble_final_report = build_final_report
 
 
+def build_final_prompt(
+    decompose_result: DecomposeResult,
+    trace_result: TraceResult,
+    compete_result: CompeteResult,
+    stress_result: StressResult,
+) -> str:
+    """Return the live final-stage prompt."""
+
+    return (
+        "You are running the phase-1 rigor pipeline final stage. Return JSON only and no markdown.\n\n"
+        "Task: assemble a dense final report that faithfully summarizes the previous phase-1 artifacts.\n\n"
+        f"Schema:\n{json.dumps(FINAL_SCHEMA, indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
+        "Rules:\n"
+        "- Preserve disagreement, uncertainty, and surprises rather than flattening them away.\n"
+        "- Every list should contain concise but content-rich strings.\n"
+        "- executive_summary should read like a decision memo paragraph, not a bullet list.\n\n"
+        "Decompose artifact:\n"
+        f"{json.dumps(asdict(decompose_result), indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
+        "Trace artifact:\n"
+        f"{json.dumps(asdict(trace_result), indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
+        "Compete artifact:\n"
+        f"{json.dumps(asdict(compete_result), indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
+        "Stress artifact:\n"
+        f"{json.dumps(asdict(stress_result), indent=2, ensure_ascii=False, sort_keys=True)}\n"
+    )
+
+
+def run_final(
+    decompose_result: DecomposeResult,
+    trace_result: TraceResult,
+    compete_result: CompeteResult,
+    stress_result: StressResult,
+    *,
+    model: str,
+    api_key: str,
+) -> FinalReport:
+    """Run the live final stage directly from this module."""
+
+    response_text = call_openrouter(
+        api_key=api_key,
+        model=model,
+        messages=[
+            {"role": "system", "content": "Return strict JSON for the requested schema only."},
+            {
+                "role": "user",
+                "content": build_final_prompt(
+                    decompose_result,
+                    trace_result,
+                    compete_result,
+                    stress_result,
+                ),
+            },
+        ],
+        temperature=0.0,
+        max_tokens=2600,
+    )
+    payload = _load_json_object(response_text, stage_name="final")
+    return FinalReport(**payload)
+
+
 def _ordinal_label(value: int) -> str:
     if value == 1:
         return "1st"
@@ -118,10 +208,27 @@ def _build_executive_summary(
     )
 
 
-
 def _bounded_non_empty(values: list[str], *, fallback: list[str]) -> list[str]:
     cleaned = [" ".join(value.split()) for value in values if value and value.strip()]
     return cleaned or fallback
 
 
-__all__ = ["assemble_final_report", "build_final", "build_final_report"]
+def _load_json_object(response_text: str, *, stage_name: str) -> dict[str, object]:
+    cleaned = response_text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    payload = json.loads(cleaned)
+    if not isinstance(payload, dict):
+        raise ValueError(f"{stage_name} must return a JSON object")
+    return payload
+
+
+__all__ = [
+    "FINAL_SCHEMA",
+    "assemble_final_report",
+    "build_final",
+    "build_final_prompt",
+    "build_final_report",
+    "run_final",
+]

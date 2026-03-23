@@ -9,6 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .models import ActorCard, ConstraintCard, DecomposeResult, NodeCard, ProblemFrame
+from .openrouter import call_openrouter
 
 _FILLER_PREFIXES = (
     "i want to know",
@@ -507,3 +508,128 @@ def _dedupe_preserve_order(values: Iterable[str]) -> list[str]:
             seen.add(key)
             ordered.append(value)
     return ordered
+
+
+DECOMPOSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "problem_frame": {
+            "type": "object",
+            "properties": {
+                "core_question": {"type": "string"},
+                "decision_or_analysis_target": {"type": "string"},
+                "scope_notes": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["core_question", "decision_or_analysis_target", "scope_notes"],
+        },
+        "actor_cards": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "type": {"type": "string"},
+                    "role": {"type": "string"},
+                    "goal_guess": {"type": "string"},
+                    "why_relevant": {"type": "string"},
+                },
+                "required": ["name", "type", "role", "goal_guess", "why_relevant"],
+            },
+        },
+        "node_cards": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "type": {"type": "string"},
+                    "function": {"type": "string"},
+                    "why_relevant": {"type": "string"},
+                },
+                "required": ["name", "type", "function", "why_relevant"],
+            },
+        },
+        "constraint_cards": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "constraint": {"type": "string"},
+                    "applies_to": {"type": "array", "items": {"type": "string"}},
+                    "why_it_matters": {"type": "string"},
+                },
+                "required": ["constraint", "applies_to", "why_it_matters"],
+            },
+        },
+    },
+    "required": ["problem_frame", "actor_cards", "node_cards", "constraint_cards"],
+}
+
+
+def build_decompose_prompt(problem_text: str) -> str:
+    """Return the live decompose-stage prompt."""
+
+    normalized_problem = normalize_text(problem_text)
+    if not normalized_problem:
+        raise ValueError("problem_text must not be empty")
+
+    return (
+        "You are running the phase-1 rigor pipeline decompose stage. "
+        "Return JSON only and do not wrap it in markdown.\n\n"
+        "Task: extract the concrete problem frame, actors, operational nodes, and binding constraints.\n"
+        "Favor specific operational detail over generic commentary.\n\n"
+        f"Schema:\n{json.dumps(DECOMPOSE_SCHEMA, indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
+        "Rules:\n"
+        "- Keep scope_notes concise and concrete.\n"
+        "- actor_cards, node_cards, and constraint_cards may be empty arrays, but only if the text truly gives no support.\n"
+        "- Use only the allowed actor types already used in this repository: person, organization, state, firm, proxy, institution, other.\n"
+        "- Use only the allowed node types already used in this repository: facility, route, market, institutional node, platform, other.\n\n"
+        f"Problem text:\n{normalized_problem}\n"
+    )
+
+
+def run_decompose(problem_text: str, *, model: str, api_key: str) -> DecomposeResult:
+    """Run the live decompose stage directly from this module."""
+
+    response_text = call_openrouter(
+        api_key=api_key,
+        model=model,
+        messages=[
+            {"role": "system", "content": "Return strict JSON for the requested schema only."},
+            {"role": "user", "content": build_decompose_prompt(problem_text)},
+        ],
+        temperature=0.0,
+        max_tokens=2400,
+    )
+    payload = _load_json_object(response_text, stage_name="decompose")
+    return DecomposeResult(
+        problem_frame=ProblemFrame(**payload["problem_frame"]),
+        actor_cards=[ActorCard(**item) for item in payload.get("actor_cards", [])],
+        node_cards=[NodeCard(**item) for item in payload.get("node_cards", [])],
+        constraint_cards=[ConstraintCard(**item) for item in payload.get("constraint_cards", [])],
+    )
+
+
+def _load_json_object(response_text: str, *, stage_name: str) -> dict[str, object]:
+    cleaned = response_text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        payload = json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{stage_name} returned invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{stage_name} must return a JSON object")
+    return payload
+
+
+
+__all__ = [
+    "DECOMPOSE_SCHEMA",
+    "build_decompose_prompt",
+    "decompose_problem",
+    "decompose_to_json",
+    "run_decompose",
+    "save_decompose_result",
+]
