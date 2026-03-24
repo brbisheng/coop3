@@ -86,8 +86,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="perspective-extractor",
         description=(
-            "Run the phase-1 rigor engine directly against a live OpenRouter model. "
-            "Legacy perspective-extraction stages are not exposed here; fixture mode is opt-in for tests and demos only."
+            "Run the phase-1 rigor engine (decompose -> trace -> compete -> stress -> final) against a live OpenRouter model. "
+            "Legacy perspective-extraction stages are intentionally non-core and not exposed in this CLI; fixture mode is opt-in for tests and demos only."
         ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
