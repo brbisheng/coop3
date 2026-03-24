@@ -149,7 +149,10 @@ def build_trace_prompt(
         "Rules:\n"
         "- consequence_chain must start at order 1 and increase by 1.\n"
         "- Use concrete operational language, not generic strategic prose.\n"
-        "- affected_entities should stay tightly tied to the described mechanism.\n\n"
+        "- affected_entities should stay tightly tied to the described mechanism.\n"
+        "- Hard constraint: include at least one substitute-path adaptation (rerouting, replacement, work-around, or policy substitution) in order 2 or order 3.\n"
+        "- Hard constraint: order 2 and order 3 must be true second-/third-order effects caused by adaptation or feedback, not restatements of order 1.\n"
+        "- Hard constraint: each step's mechanism must explicitly explain why that step follows from the previous step.\n\n"
         f"Trace target: {target_instruction}\n\n"
         f"Input artifact or problem text:\n{input_body}\n"
     )
