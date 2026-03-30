@@ -8,6 +8,7 @@ from dataclasses import asdict
 
 from .models import CompeteResult, DecomposeResult, FinalReport, StressResult, TraceResult
 from .openrouter import call_openrouter
+from .policy import PolicyVersion, resolve_policy_version
 
 _GENERIC_TARGET = "the focal problem"
 
@@ -125,12 +126,17 @@ def build_final_prompt(
     stress_result: StressResult,
     *,
     prompt_patch: str | None = None,
+    policy_version: str | PolicyVersion | None = None,
 ) -> str:
     """Return the live final-stage prompt."""
 
+    policy = resolve_policy_version(policy_version)
+    stage_policy = policy.stage("final", default_max_tokens=2600)
     patch_block = f"\nImprovement patch for this round:\n{prompt_patch.strip()}\n" if prompt_patch and prompt_patch.strip() else ""
+    extra_rules = "".join(f"{rule}\n" for rule in stage_policy.prompt_rules_extra)
     return (
         "You are running the phase-1 rigor pipeline final stage. Return JSON only and no markdown.\n\n"
+        f"{stage_policy.prompt_prefix}"
         "Task: assemble a dense final report that faithfully summarizes the previous phase-1 artifacts.\n\n"
         f"Schema:\n{json.dumps(FINAL_SCHEMA, indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
         "Rules:\n"
@@ -140,6 +146,7 @@ def build_final_prompt(
         "- Hard constraint: do not open executive_summary with a generic macro-summary phrase (forbidden openings include: 'Overall', 'In summary', 'This situation highlights', 'At a high level').\n"
         "- Hard constraint: open executive_summary with concrete actors, nodes, or mechanism conflict from the artifacts.\n"
         "- Hard constraint: every section must include artifact-grounded specifics (named actors/nodes/mechanisms/signals), not broad geopolitical or market platitudes.\n\n"
+        f"{extra_rules}"
         f"{patch_block}"
         "Decompose artifact:\n"
         f"{json.dumps(asdict(decompose_result), indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
@@ -161,14 +168,17 @@ def run_final(
     model: str,
     api_key: str,
     prompt_patch: str | None = None,
+    policy_version: str | PolicyVersion | None = None,
 ) -> FinalReport:
     """Run the live final stage directly from this module."""
 
+    policy = resolve_policy_version(policy_version)
+    stage_policy = policy.stage("final", default_max_tokens=2600)
     response_text = call_openrouter(
         api_key=api_key,
         model=model,
         messages=[
-            {"role": "system", "content": "Return strict JSON for the requested schema only."},
+            {"role": "system", "content": stage_policy.system_prompt},
             {
                 "role": "user",
                 "content": build_final_prompt(
@@ -177,11 +187,12 @@ def run_final(
                     compete_result,
                     stress_result,
                     prompt_patch=prompt_patch,
+                    policy_version=policy,
                 ),
             },
         ],
-        temperature=0.0,
-        max_tokens=2600,
+        temperature=stage_policy.temperature,
+        max_tokens=stage_policy.max_tokens,
     )
     payload = _load_json_object(response_text, stage_name="final")
     return FinalReport(**payload)

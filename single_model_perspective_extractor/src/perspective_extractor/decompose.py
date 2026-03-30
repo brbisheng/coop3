@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .models import ActorCard, ConstraintCard, DecomposeResult, NodeCard, ProblemFrame
 from .openrouter import call_openrouter
+from .policy import PolicyVersion, resolve_policy_version
 
 _FILLER_PREFIXES = (
     "i want to know",
@@ -566,17 +567,26 @@ DECOMPOSE_SCHEMA = {
 }
 
 
-def build_decompose_prompt(problem_text: str, *, prompt_patch: str | None = None) -> str:
+def build_decompose_prompt(
+    problem_text: str,
+    *,
+    prompt_patch: str | None = None,
+    policy_version: str | PolicyVersion | None = None,
+) -> str:
     """Return the live decompose-stage prompt."""
 
     normalized_problem = normalize_text(problem_text)
     if not normalized_problem:
         raise ValueError("problem_text must not be empty")
 
+    policy = resolve_policy_version(policy_version)
+    stage_policy = policy.stage("decompose", default_max_tokens=2400)
     patch_block = f"\nImprovement patch for this round:\n{prompt_patch.strip()}\n" if prompt_patch and prompt_patch.strip() else ""
+    extra_rules = "".join(f"{rule}\n" for rule in stage_policy.prompt_rules_extra)
     return (
         "You are running the phase-1 rigor pipeline decompose stage. "
         "Return JSON only and do not wrap it in markdown.\n\n"
+        f"{stage_policy.prompt_prefix}"
         "Task: extract the concrete problem frame, actors, operational nodes, and binding constraints.\n"
         "Favor specific operational detail over generic commentary.\n\n"
         f"Schema:\n{json.dumps(DECOMPOSE_SCHEMA, indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
@@ -589,6 +599,7 @@ def build_decompose_prompt(problem_text: str, *, prompt_patch: str | None = None
         "- actor_cards, node_cards, and constraint_cards may be empty arrays, but only if the text truly gives no support.\n"
         "- Use only the allowed actor types already used in this repository: person, organization, state, firm, proxy, institution, other.\n"
         "- Use only the allowed node types already used in this repository: facility, route, market, institutional node, platform, other.\n\n"
+        f"{extra_rules}"
         f"{patch_block}"
         f"Problem text:\n{normalized_problem}\n"
     )
@@ -600,18 +611,28 @@ def run_decompose(
     model: str,
     api_key: str,
     prompt_patch: str | None = None,
+    policy_version: str | PolicyVersion | None = None,
 ) -> DecomposeResult:
     """Run the live decompose stage directly from this module."""
 
+    policy = resolve_policy_version(policy_version)
+    stage_policy = policy.stage("decompose", default_max_tokens=2400)
     response_text = call_openrouter(
         api_key=api_key,
         model=model,
         messages=[
-            {"role": "system", "content": "Return strict JSON for the requested schema only."},
-            {"role": "user", "content": build_decompose_prompt(problem_text, prompt_patch=prompt_patch)},
+            {"role": "system", "content": stage_policy.system_prompt},
+            {
+                "role": "user",
+                "content": build_decompose_prompt(
+                    problem_text,
+                    prompt_patch=prompt_patch,
+                    policy_version=policy,
+                ),
+            },
         ],
-        temperature=0.0,
-        max_tokens=2400,
+        temperature=stage_policy.temperature,
+        max_tokens=stage_policy.max_tokens,
     )
     payload = _load_json_object(response_text, stage_name="decompose")
     return DecomposeResult(

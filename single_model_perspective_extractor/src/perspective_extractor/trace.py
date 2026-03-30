@@ -9,6 +9,7 @@ from dataclasses import asdict
 
 from .models import DecomposeResult, TraceResult, TraceStep
 from .openrouter import call_openrouter
+from .policy import PolicyVersion, resolve_policy_version
 
 _GENERIC_NODE = "the primary operational node"
 _GENERIC_ACTOR = "the primary decision-maker"
@@ -126,6 +127,7 @@ def build_trace_prompt(
     *,
     trace_target: str | None = None,
     prompt_patch: str | None = None,
+    policy_version: str | PolicyVersion | None = None,
 ) -> str:
     """Return the live trace-stage prompt."""
 
@@ -142,10 +144,14 @@ def build_trace_prompt(
             raise ValueError("problem_text must not be empty")
         input_body = normalized_problem
 
+    policy = resolve_policy_version(policy_version)
+    stage_policy = policy.stage("trace", default_max_tokens=2200)
     target_instruction = trace_target or "Infer the most operationally relevant trace target."
     patch_block = f"\nImprovement patch for this round:\n{prompt_patch.strip()}\n" if prompt_patch and prompt_patch.strip() else ""
+    extra_rules = "".join(f"{rule}\n" for rule in stage_policy.prompt_rules_extra)
     return (
         "You are running the phase-1 rigor pipeline trace stage. Return JSON only and no markdown.\n\n"
+        f"{stage_policy.prompt_prefix}"
         "Task: produce an ordered first-, second-, and third-order consequence chain with concrete mechanisms and affected entities.\n\n"
         f"Schema:\n{json.dumps(TRACE_SCHEMA, indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
         "Rules:\n"
@@ -155,6 +161,7 @@ def build_trace_prompt(
         "- Hard constraint: include at least one substitute-path adaptation (rerouting, replacement, work-around, or policy substitution) in order 2 or order 3.\n"
         "- Hard constraint: order 2 and order 3 must be true second-/third-order effects caused by adaptation or feedback, not restatements of order 1.\n"
         "- Hard constraint: each step's mechanism must explicitly explain why that step follows from the previous step.\n\n"
+        f"{extra_rules}"
         f"{patch_block}"
         f"Trace target: {target_instruction}\n\n"
         f"Input artifact or problem text:\n{input_body}\n"
@@ -168,25 +175,29 @@ def run_trace(
     api_key: str,
     trace_target: str | None = None,
     prompt_patch: str | None = None,
+    policy_version: str | PolicyVersion | None = None,
 ) -> TraceResult:
     """Run the live trace stage directly from this module."""
 
+    policy = resolve_policy_version(policy_version)
+    stage_policy = policy.stage("trace", default_max_tokens=2200)
     response_text = call_openrouter(
         api_key=api_key,
         model=model,
         messages=[
-            {"role": "system", "content": "Return strict JSON for the requested schema only."},
+            {"role": "system", "content": stage_policy.system_prompt},
             {
                 "role": "user",
                 "content": build_trace_prompt(
                     problem_text_or_artifact,
                     trace_target=trace_target,
                     prompt_patch=prompt_patch,
+                    policy_version=policy,
                 ),
             },
         ],
-        temperature=0.0,
-        max_tokens=2200,
+        temperature=stage_policy.temperature,
+        max_tokens=stage_policy.max_tokens,
     )
     payload = _load_json_object(response_text, stage_name="trace")
     return TraceResult(

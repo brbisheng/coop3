@@ -45,6 +45,7 @@ from .legacy.expand import expand_axis as expand_axis_note
 from .prompts import PromptVariant, resolve_prompt_variant
 from .evaluate import EvaluationResult, evaluate_phase1_artifacts
 from .improve import PromptPatchBundle, build_prompt_patch_from_failure_flags
+from .policy import PolicyVersion
 
 
 @dataclass(frozen=True, slots=True)
@@ -457,6 +458,7 @@ def run_phase1_pipeline(
     improve_rounds: int = 1,
     run_id: str | None = None,
     live_run_output_root: str | Path = "examples/out/live_runs",
+    policy_version: str | PolicyVersion | None = None,
 ) -> Phase1PipelineArtifacts:
     """Run the dedicated phase-1 decompose→trace→compete→stress→final path."""
 
@@ -494,6 +496,7 @@ def run_phase1_pipeline(
                 model=model,
                 api_key=api_key,
                 prompt_patch=current_patch.decompose_patch,
+                policy_version=policy_version,
             )
             trace_result = run_trace(
                 decompose_result,
@@ -501,6 +504,7 @@ def run_phase1_pipeline(
                 model=model,
                 api_key=api_key,
                 prompt_patch=current_patch.trace_patch,
+                policy_version=policy_version,
             )
             compete_result = run_compete(
                 decompose_result,
@@ -508,6 +512,7 @@ def run_phase1_pipeline(
                 model=model,
                 api_key=api_key,
                 prompt_patch=current_patch.compete_patch,
+                policy_version=policy_version,
             )
             stress_result = run_stress(
                 decompose_result,
@@ -516,6 +521,7 @@ def run_phase1_pipeline(
                 model=model,
                 api_key=api_key,
                 prompt_patch=current_patch.stress_patch,
+                policy_version=policy_version,
             )
             final_report = run_final(
                 decompose_result,
@@ -525,6 +531,7 @@ def run_phase1_pipeline(
                 model=model,
                 api_key=api_key,
                 prompt_patch=current_patch.final_patch,
+                policy_version=policy_version,
             )
         else:
             decompose_result = decompose_problem(problem_text)
