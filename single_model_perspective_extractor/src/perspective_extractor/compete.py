@@ -115,9 +115,12 @@ generate_competing_mechanisms = build_competing_mechanisms
 def build_compete_prompt(
     decompose_result: DecomposeResult,
     trace_result: TraceResult,
+    *,
+    prompt_patch: str | None = None,
 ) -> str:
     """Return the live compete-stage prompt."""
 
+    patch_block = f"\nImprovement patch for this round:\n{prompt_patch.strip()}\n" if prompt_patch and prompt_patch.strip() else ""
     return (
         "You are running the phase-1 rigor pipeline compete stage. Return JSON only and no markdown.\n\n"
         "Task: produce exactly two competing mechanisms with divergent predictions and observable signals.\n\n"
@@ -129,6 +132,7 @@ def build_compete_prompt(
         "- Hard constraint: each mechanism must produce a different observable prediction over the same time window and entity set.\n"
         "- Hard constraint: divergence_note must name at least one concrete signal whose direction or timing differs between A and B.\n"
         "- Do not emit more than two competing mechanisms.\n\n"
+        f"{patch_block}"
         "Decompose artifact:\n"
         f"{json.dumps(asdict(decompose_result), indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
         "Trace artifact:\n"
@@ -142,6 +146,7 @@ def run_compete(
     *,
     model: str,
     api_key: str,
+    prompt_patch: str | None = None,
 ) -> CompeteResult:
     """Run the live compete stage directly from this module."""
 
@@ -150,7 +155,14 @@ def run_compete(
         model=model,
         messages=[
             {"role": "system", "content": "Return strict JSON for the requested schema only."},
-            {"role": "user", "content": build_compete_prompt(decompose_result, trace_result)},
+            {
+                "role": "user",
+                "content": build_compete_prompt(
+                    decompose_result,
+                    trace_result,
+                    prompt_patch=prompt_patch,
+                ),
+            },
         ],
         temperature=0.0,
         max_tokens=2200,
