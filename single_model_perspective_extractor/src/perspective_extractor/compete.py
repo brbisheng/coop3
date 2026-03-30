@@ -9,6 +9,7 @@ from dataclasses import asdict
 
 from .models import CompeteResult, CompetingMechanism, DecomposeResult, TraceResult
 from .openrouter import call_openrouter
+from .policy import PolicyVersion, resolve_policy_version
 
 _GENERIC_CONSTRAINT = "binding operational constraints"
 _GENERIC_ACTOR = "the lead actor"
@@ -117,12 +118,17 @@ def build_compete_prompt(
     trace_result: TraceResult,
     *,
     prompt_patch: str | None = None,
+    policy_version: str | PolicyVersion | None = None,
 ) -> str:
     """Return the live compete-stage prompt."""
 
+    policy = resolve_policy_version(policy_version)
+    stage_policy = policy.stage("compete", default_max_tokens=2200)
     patch_block = f"\nImprovement patch for this round:\n{prompt_patch.strip()}\n" if prompt_patch and prompt_patch.strip() else ""
+    extra_rules = "".join(f"{rule}\n" for rule in stage_policy.prompt_rules_extra)
     return (
         "You are running the phase-1 rigor pipeline compete stage. Return JSON only and no markdown.\n\n"
+        f"{stage_policy.prompt_prefix}"
         "Task: produce exactly two competing mechanisms with divergent predictions and observable signals.\n\n"
         f"Schema:\n{json.dumps(COMPETE_SCHEMA, indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
         "Rules:\n"
@@ -132,6 +138,7 @@ def build_compete_prompt(
         "- Hard constraint: each mechanism must produce a different observable prediction over the same time window and entity set.\n"
         "- Hard constraint: divergence_note must name at least one concrete signal whose direction or timing differs between A and B.\n"
         "- Do not emit more than two competing mechanisms.\n\n"
+        f"{extra_rules}"
         f"{patch_block}"
         "Decompose artifact:\n"
         f"{json.dumps(asdict(decompose_result), indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
@@ -147,25 +154,29 @@ def run_compete(
     model: str,
     api_key: str,
     prompt_patch: str | None = None,
+    policy_version: str | PolicyVersion | None = None,
 ) -> CompeteResult:
     """Run the live compete stage directly from this module."""
 
+    policy = resolve_policy_version(policy_version)
+    stage_policy = policy.stage("compete", default_max_tokens=2200)
     response_text = call_openrouter(
         api_key=api_key,
         model=model,
         messages=[
-            {"role": "system", "content": "Return strict JSON for the requested schema only."},
+            {"role": "system", "content": stage_policy.system_prompt},
             {
                 "role": "user",
                 "content": build_compete_prompt(
                     decompose_result,
                     trace_result,
                     prompt_patch=prompt_patch,
+                    policy_version=policy,
                 ),
             },
         ],
-        temperature=0.0,
-        max_tokens=2200,
+        temperature=stage_policy.temperature,
+        max_tokens=stage_policy.max_tokens,
     )
     payload = _load_json_object(response_text, stage_name="compete")
     return CompeteResult(

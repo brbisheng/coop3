@@ -16,6 +16,7 @@ from .models import (
     TraceResult,
 )
 from .openrouter import call_openrouter
+from .policy import PolicyVersion, resolve_policy_version
 
 _GENERIC_ACTOR = "the lead actor"
 _GENERIC_NODE = "the focal node"
@@ -159,12 +160,17 @@ def build_stress_prompt(
     compete_result: CompeteResult,
     *,
     prompt_patch: str | None = None,
+    policy_version: str | PolicyVersion | None = None,
 ) -> str:
     """Return the live stress-stage prompt."""
 
+    policy = resolve_policy_version(policy_version)
+    stage_policy = policy.stage("stress", default_max_tokens=2400)
     patch_block = f"\nImprovement patch for this round:\n{prompt_patch.strip()}\n" if prompt_patch and prompt_patch.strip() else ""
+    extra_rules = "".join(f"{rule}\n" for rule in stage_policy.prompt_rules_extra)
     return (
         "You are running the phase-1 rigor pipeline stress stage. Return JSON only and no markdown.\n\n"
+        f"{stage_policy.prompt_prefix}"
         "Task: stress-test the current mechanism cards with falsification and surprise ledgers.\n\n"
         f"Schema:\n{json.dumps(STRESS_SCHEMA, indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
         "Rules:\n"
@@ -174,6 +180,7 @@ def build_stress_prompt(
         "- Hard constraint: plausible surprises must be operationally plausible and non-obvious, with a concrete trigger and dependency path.\n"
         "- Hard constraint: reject generic statements such as 'things may change' or 'unexpected events can happen' in both ledgers.\n"
         "- Keep every entry grounded in the provided artifacts.\n\n"
+        f"{extra_rules}"
         f"{patch_block}"
         "Decompose artifact:\n"
         f"{json.dumps(asdict(decompose_result), indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
@@ -192,14 +199,17 @@ def run_stress(
     model: str,
     api_key: str,
     prompt_patch: str | None = None,
+    policy_version: str | PolicyVersion | None = None,
 ) -> StressResult:
     """Run the live stress stage directly from this module."""
 
+    policy = resolve_policy_version(policy_version)
+    stage_policy = policy.stage("stress", default_max_tokens=2400)
     response_text = call_openrouter(
         api_key=api_key,
         model=model,
         messages=[
-            {"role": "system", "content": "Return strict JSON for the requested schema only."},
+            {"role": "system", "content": stage_policy.system_prompt},
             {
                 "role": "user",
                 "content": build_stress_prompt(
@@ -207,11 +217,12 @@ def run_stress(
                     trace_result,
                     compete_result,
                     prompt_patch=prompt_patch,
+                    policy_version=policy,
                 ),
             },
         ],
-        temperature=0.0,
-        max_tokens=2400,
+        temperature=stage_policy.temperature,
+        max_tokens=stage_policy.max_tokens,
     )
     payload = _load_json_object(response_text, stage_name="stress")
     return StressResult(
