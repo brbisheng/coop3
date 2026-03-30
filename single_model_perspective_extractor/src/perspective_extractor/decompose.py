@@ -566,13 +566,14 @@ DECOMPOSE_SCHEMA = {
 }
 
 
-def build_decompose_prompt(problem_text: str) -> str:
+def build_decompose_prompt(problem_text: str, *, prompt_patch: str | None = None) -> str:
     """Return the live decompose-stage prompt."""
 
     normalized_problem = normalize_text(problem_text)
     if not normalized_problem:
         raise ValueError("problem_text must not be empty")
 
+    patch_block = f"\nImprovement patch for this round:\n{prompt_patch.strip()}\n" if prompt_patch and prompt_patch.strip() else ""
     return (
         "You are running the phase-1 rigor pipeline decompose stage. "
         "Return JSON only and do not wrap it in markdown.\n\n"
@@ -588,11 +589,18 @@ def build_decompose_prompt(problem_text: str) -> str:
         "- actor_cards, node_cards, and constraint_cards may be empty arrays, but only if the text truly gives no support.\n"
         "- Use only the allowed actor types already used in this repository: person, organization, state, firm, proxy, institution, other.\n"
         "- Use only the allowed node types already used in this repository: facility, route, market, institutional node, platform, other.\n\n"
+        f"{patch_block}"
         f"Problem text:\n{normalized_problem}\n"
     )
 
 
-def run_decompose(problem_text: str, *, model: str, api_key: str) -> DecomposeResult:
+def run_decompose(
+    problem_text: str,
+    *,
+    model: str,
+    api_key: str,
+    prompt_patch: str | None = None,
+) -> DecomposeResult:
     """Run the live decompose stage directly from this module."""
 
     response_text = call_openrouter(
@@ -600,7 +608,7 @@ def run_decompose(problem_text: str, *, model: str, api_key: str) -> DecomposeRe
         model=model,
         messages=[
             {"role": "system", "content": "Return strict JSON for the requested schema only."},
-            {"role": "user", "content": build_decompose_prompt(problem_text)},
+            {"role": "user", "content": build_decompose_prompt(problem_text, prompt_patch=prompt_patch)},
         ],
         temperature=0.0,
         max_tokens=2400,

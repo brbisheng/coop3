@@ -125,6 +125,7 @@ def build_trace_prompt(
     problem_text_or_artifact: str | DecomposeResult,
     *,
     trace_target: str | None = None,
+    prompt_patch: str | None = None,
 ) -> str:
     """Return the live trace-stage prompt."""
 
@@ -142,6 +143,7 @@ def build_trace_prompt(
         input_body = normalized_problem
 
     target_instruction = trace_target or "Infer the most operationally relevant trace target."
+    patch_block = f"\nImprovement patch for this round:\n{prompt_patch.strip()}\n" if prompt_patch and prompt_patch.strip() else ""
     return (
         "You are running the phase-1 rigor pipeline trace stage. Return JSON only and no markdown.\n\n"
         "Task: produce an ordered first-, second-, and third-order consequence chain with concrete mechanisms and affected entities.\n\n"
@@ -153,6 +155,7 @@ def build_trace_prompt(
         "- Hard constraint: include at least one substitute-path adaptation (rerouting, replacement, work-around, or policy substitution) in order 2 or order 3.\n"
         "- Hard constraint: order 2 and order 3 must be true second-/third-order effects caused by adaptation or feedback, not restatements of order 1.\n"
         "- Hard constraint: each step's mechanism must explicitly explain why that step follows from the previous step.\n\n"
+        f"{patch_block}"
         f"Trace target: {target_instruction}\n\n"
         f"Input artifact or problem text:\n{input_body}\n"
     )
@@ -164,6 +167,7 @@ def run_trace(
     model: str,
     api_key: str,
     trace_target: str | None = None,
+    prompt_patch: str | None = None,
 ) -> TraceResult:
     """Run the live trace stage directly from this module."""
 
@@ -177,6 +181,7 @@ def run_trace(
                 "content": build_trace_prompt(
                     problem_text_or_artifact,
                     trace_target=trace_target,
+                    prompt_patch=prompt_patch,
                 ),
             },
         ],

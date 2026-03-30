@@ -157,9 +157,12 @@ def build_stress_prompt(
     decompose_result: DecomposeResult,
     trace_result: TraceResult,
     compete_result: CompeteResult,
+    *,
+    prompt_patch: str | None = None,
 ) -> str:
     """Return the live stress-stage prompt."""
 
+    patch_block = f"\nImprovement patch for this round:\n{prompt_patch.strip()}\n" if prompt_patch and prompt_patch.strip() else ""
     return (
         "You are running the phase-1 rigor pipeline stress stage. Return JSON only and no markdown.\n\n"
         "Task: stress-test the current mechanism cards with falsification and surprise ledgers.\n\n"
@@ -171,6 +174,7 @@ def build_stress_prompt(
         "- Hard constraint: plausible surprises must be operationally plausible and non-obvious, with a concrete trigger and dependency path.\n"
         "- Hard constraint: reject generic statements such as 'things may change' or 'unexpected events can happen' in both ledgers.\n"
         "- Keep every entry grounded in the provided artifacts.\n\n"
+        f"{patch_block}"
         "Decompose artifact:\n"
         f"{json.dumps(asdict(decompose_result), indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
         "Trace artifact:\n"
@@ -187,6 +191,7 @@ def run_stress(
     *,
     model: str,
     api_key: str,
+    prompt_patch: str | None = None,
 ) -> StressResult:
     """Run the live stress stage directly from this module."""
 
@@ -201,6 +206,7 @@ def run_stress(
                     decompose_result,
                     trace_result,
                     compete_result,
+                    prompt_patch=prompt_patch,
                 ),
             },
         ],

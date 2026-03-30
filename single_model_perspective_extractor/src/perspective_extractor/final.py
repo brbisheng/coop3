@@ -123,9 +123,12 @@ def build_final_prompt(
     trace_result: TraceResult,
     compete_result: CompeteResult,
     stress_result: StressResult,
+    *,
+    prompt_patch: str | None = None,
 ) -> str:
     """Return the live final-stage prompt."""
 
+    patch_block = f"\nImprovement patch for this round:\n{prompt_patch.strip()}\n" if prompt_patch and prompt_patch.strip() else ""
     return (
         "You are running the phase-1 rigor pipeline final stage. Return JSON only and no markdown.\n\n"
         "Task: assemble a dense final report that faithfully summarizes the previous phase-1 artifacts.\n\n"
@@ -137,6 +140,7 @@ def build_final_prompt(
         "- Hard constraint: do not open executive_summary with a generic macro-summary phrase (forbidden openings include: 'Overall', 'In summary', 'This situation highlights', 'At a high level').\n"
         "- Hard constraint: open executive_summary with concrete actors, nodes, or mechanism conflict from the artifacts.\n"
         "- Hard constraint: every section must include artifact-grounded specifics (named actors/nodes/mechanisms/signals), not broad geopolitical or market platitudes.\n\n"
+        f"{patch_block}"
         "Decompose artifact:\n"
         f"{json.dumps(asdict(decompose_result), indent=2, ensure_ascii=False, sort_keys=True)}\n\n"
         "Trace artifact:\n"
@@ -156,6 +160,7 @@ def run_final(
     *,
     model: str,
     api_key: str,
+    prompt_patch: str | None = None,
 ) -> FinalReport:
     """Run the live final stage directly from this module."""
 
@@ -171,6 +176,7 @@ def run_final(
                     trace_result,
                     compete_result,
                     stress_result,
+                    prompt_patch=prompt_patch,
                 ),
             },
         ],

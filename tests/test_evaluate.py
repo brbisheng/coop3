@@ -8,6 +8,7 @@ from perspective_extractor.evaluate import (
     evaluate_from_json_paths,
     evaluate_phase1_artifacts,
 )
+from perspective_extractor.pipeline import run_phase1_pipeline
 
 
 def test_evaluate_phase1_artifacts_returns_expected_minimal_metrics(phase1_scenario) -> None:
@@ -34,6 +35,9 @@ def test_evaluate_phase1_artifacts_returns_expected_minimal_metrics(phase1_scena
 
     assert set(result.future_scores) == {"ANCS", "MNR", "SDR", "SUR", "DPQ", "RSMS"}
     assert all(value is None for value in result.future_scores.values())
+    assert result.failure_flags["predictions_differ_false"] is False
+    assert result.failure_flags["surprise_count_zero"] is False
+    assert result.active_failure_flags == []
 
 
 def test_evaluate_from_json_paths_loads_five_artifacts(tmp_path, phase1_scenario) -> None:
@@ -60,3 +64,19 @@ def test_evaluate_from_json_paths_loads_five_artifacts(tmp_path, phase1_scenario
     assert result.metrics.actor_count > 0
     assert result.metrics.trace_depth > 0
     assert result.metrics.has_exactly_two_competing_mechanisms is True
+
+
+def test_run_phase1_pipeline_improve_rounds_writes_round_artifacts(tmp_path) -> None:
+    artifacts = run_phase1_pipeline(
+        "How would a shutdown at the main import terminal affect regional fuel supply and retail prices?",
+        improve_rounds=2,
+        run_id="test-run",
+        live_run_output_root=tmp_path,
+    )
+
+    base = tmp_path / "test-run"
+    assert (base / "round_1" / "01_decompose.json").exists()
+    assert (base / "round_1" / "06_evaluate.json").exists()
+    assert (base / "round_2" / "05_final.json").exists()
+    assert len(artifacts.round_evaluations) == 2
+    assert artifacts.run_id == "test-run"

@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import asdict
+import json
+from pathlib import Path
+from datetime import datetime, timezone
 
 from .models import (
     AxisCard,
@@ -39,6 +43,8 @@ from .legacy.synthesize import synthesize_map, synthesize_summary
 from .legacy.axes import generate_axes
 from .legacy.expand import expand_axis as expand_axis_note
 from .prompts import PromptVariant, resolve_prompt_variant
+from .evaluate import EvaluationResult, evaluate_phase1_artifacts
+from .improve import PromptPatchBundle, build_prompt_patch_from_failure_flags
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +104,9 @@ class Phase1PipelineArtifacts:
     compete_result: CompeteResult
     stress_result: StressResult
     final_report: FinalReport
+    round_evaluations: list[EvaluationResult]
+    run_id: str
+    output_root: str
 
 
 def _card_id(card: KnowledgeCard | VariableCard | ControversyCard) -> str:
@@ -445,68 +454,139 @@ def run_phase1_pipeline(
     trace_target: str | None = None,
     model: str | None = None,
     api_key: str | None = None,
+    improve_rounds: int = 1,
+    run_id: str | None = None,
+    live_run_output_root: str | Path = "examples/out/live_runs",
 ) -> Phase1PipelineArtifacts:
     """Run the dedicated phase-1 decompose→trace→compete→stress→final path."""
+
+    if improve_rounds < 1:
+        raise ValueError("improve_rounds must be >= 1")
+
+    resolved_run_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    output_root = Path(live_run_output_root) / resolved_run_id
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    def _save_round_json(round_dir: Path, filename: str, payload: dict[str, object]) -> None:
+        round_dir.mkdir(parents=True, exist_ok=True)
+        (round_dir / filename).write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
 
     use_live_model = model is not None or api_key is not None
     if use_live_model:
         if not model or not api_key:
             raise ValueError("model and api_key are both required for live phase-1 execution")
-        decompose_result = run_decompose(problem_text, model=model, api_key=api_key)
-        trace_result = run_trace(
-            decompose_result,
-            trace_target=trace_target,
-            model=model,
-            api_key=api_key,
+    current_patch = PromptPatchBundle()
+    round_evaluations: list[EvaluationResult] = []
+    decompose_result: DecomposeResult | None = None
+    trace_result: TraceResult | None = None
+    compete_result: CompeteResult | None = None
+    stress_result: StressResult | None = None
+    final_report: FinalReport | None = None
+
+    for round_index in range(1, improve_rounds + 1):
+        round_dir = output_root / f"round_{round_index}"
+        if use_live_model:
+            decompose_result = run_decompose(
+                problem_text,
+                model=model,
+                api_key=api_key,
+                prompt_patch=current_patch.decompose_patch,
+            )
+            trace_result = run_trace(
+                decompose_result,
+                trace_target=trace_target,
+                model=model,
+                api_key=api_key,
+                prompt_patch=current_patch.trace_patch,
+            )
+            compete_result = run_compete(
+                decompose_result,
+                trace_result,
+                model=model,
+                api_key=api_key,
+                prompt_patch=current_patch.compete_patch,
+            )
+            stress_result = run_stress(
+                decompose_result,
+                trace_result,
+                compete_result,
+                model=model,
+                api_key=api_key,
+                prompt_patch=current_patch.stress_patch,
+            )
+            final_report = run_final(
+                decompose_result,
+                trace_result,
+                compete_result,
+                stress_result,
+                model=model,
+                api_key=api_key,
+                prompt_patch=current_patch.final_patch,
+            )
+        else:
+            decompose_result = decompose_problem(problem_text)
+            trace_result = build_trace(
+                decompose_result,
+                trace_target=trace_target,
+            )
+            compete_result = build_competing_mechanisms(
+                decompose_result,
+                trace_result,
+            )
+            stress_result = build_stress_test(
+                decompose_result,
+                trace_result,
+                compete_result,
+            )
+            final_report = build_final_report(
+                decompose_result,
+                trace_result,
+                compete_result,
+                stress_result,
+            )
+
+        decompose_payload = asdict(decompose_result)
+        trace_payload = asdict(trace_result)
+        compete_payload = asdict(compete_result)
+        stress_payload = asdict(stress_result)
+        final_payload = asdict(final_report)
+        evaluation = evaluate_phase1_artifacts(
+            decompose_artifact=decompose_payload,
+            trace_artifact=trace_payload,
+            compete_artifact=compete_payload,
+            stress_artifact=stress_payload,
+            final_artifact=final_payload,
         )
-        compete_result = run_compete(
-            decompose_result,
-            trace_result,
-            model=model,
-            api_key=api_key,
-        )
-        stress_result = run_stress(
-            decompose_result,
-            trace_result,
-            compete_result,
-            model=model,
-            api_key=api_key,
-        )
-        final_report = run_final(
-            decompose_result,
-            trace_result,
-            compete_result,
-            stress_result,
-            model=model,
-            api_key=api_key,
-        )
-    else:
-        decompose_result = decompose_problem(problem_text)
-        trace_result = build_trace(
-            decompose_result,
-            trace_target=trace_target,
-        )
-        compete_result = build_competing_mechanisms(
-            decompose_result,
-            trace_result,
-        )
-        stress_result = build_stress_test(
-            decompose_result,
-            trace_result,
-            compete_result,
-        )
-        final_report = build_final_report(
-            decompose_result,
-            trace_result,
-            compete_result,
-            stress_result,
-        )
+        round_evaluations.append(evaluation)
+
+        _save_round_json(round_dir, "01_decompose.json", decompose_payload)
+        _save_round_json(round_dir, "02_trace.json", trace_payload)
+        _save_round_json(round_dir, "03_compete.json", compete_payload)
+        _save_round_json(round_dir, "04_stress.json", stress_payload)
+        _save_round_json(round_dir, "05_final.json", final_payload)
+        _save_round_json(round_dir, "06_evaluate.json", evaluation.to_dict())
+        next_patch = build_prompt_patch_from_failure_flags(evaluation.failure_flags)
+        _save_round_json(round_dir, "07_prompt_patch_for_next_round.json", next_patch.as_dict())
+        current_patch = next_patch
+
+    assert decompose_result is not None
+    assert trace_result is not None
+    assert compete_result is not None
+    assert stress_result is not None
+    assert final_report is not None
+
     return Phase1PipelineArtifacts(
         decompose_result=decompose_result,
         trace_result=trace_result,
         compete_result=compete_result,
         stress_result=stress_result,
         final_report=final_report,
+        round_evaluations=round_evaluations,
+        run_id=resolved_run_id,
+        output_root=str(output_root),
     )
 
 

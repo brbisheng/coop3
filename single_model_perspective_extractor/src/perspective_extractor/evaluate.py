@@ -62,6 +62,8 @@ class EvaluationResult:
         "DPQ": None,
         "RSMS": None,
     })
+    failure_flags: dict[str, bool] = field(default_factory=dict)
+    active_failure_flags: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable dictionary."""
@@ -120,7 +122,18 @@ def evaluate_phase1_artifacts(
         surprise_count=len(surprise_ledger),
         final_report_section_presence=final_section_presence,
     )
-    return EvaluationResult(metrics=metrics)
+    failure_flags = {
+        "actor_count_too_low": metrics.actor_count < 2,
+        "node_count_too_low": metrics.node_count < 2,
+        "mechanism_count_not_two": not metrics.has_exactly_two_competing_mechanisms,
+        "predictions_differ_false": not metrics.predictions_differ,
+        "surprise_count_zero": metrics.surprise_count == 0,
+    }
+    return EvaluationResult(
+        metrics=metrics,
+        failure_flags=failure_flags,
+        active_failure_flags=[name for name, is_failed in failure_flags.items() if is_failed],
+    )
 
 
 def evaluate_from_json_paths(
