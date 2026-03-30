@@ -46,6 +46,7 @@ from .prompts import PromptVariant, resolve_prompt_variant
 from .evaluate import EvaluationResult, evaluate_phase1_artifacts
 from .improve import PromptPatchBundle, build_prompt_patch_from_failure_flags
 from .policy import PolicyVersion
+from .proactive import ProactiveAction, ProactiveTriggerConfig, collect_proactive_triggers
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +107,7 @@ class Phase1PipelineArtifacts:
     stress_result: StressResult
     final_report: FinalReport
     round_evaluations: list[EvaluationResult]
+    proactive_actions: list[dict[str, object]]
     run_id: str
     output_root: str
 
@@ -456,6 +458,8 @@ def run_phase1_pipeline(
     model: str | None = None,
     api_key: str | None = None,
     improve_rounds: int = 1,
+    proactive: bool = False,
+    proactive_actor_threshold: int = 2,
     run_id: str | None = None,
     live_run_output_root: str | Path = "examples/out/live_runs",
     policy_version: str | PolicyVersion | None = None,
@@ -487,6 +491,7 @@ def run_phase1_pipeline(
     compete_result: CompeteResult | None = None
     stress_result: StressResult | None = None
     final_report: FinalReport | None = None
+    proactive_actions: list[dict[str, object]] = []
 
     for round_index in range(1, improve_rounds + 1):
         round_dir = output_root / f"round_{round_index}"
@@ -569,6 +574,184 @@ def run_phase1_pipeline(
         )
         round_evaluations.append(evaluation)
 
+        if proactive:
+            proactive_config = ProactiveTriggerConfig(min_actor_count=proactive_actor_threshold)
+            trigger_priority = ("decompose", "compete", "stress")
+
+            for stage_name in trigger_priority:
+                trigger_by_stage = {
+                    stage: reason
+                    for reason, stage in collect_proactive_triggers(
+                        evaluation.metrics,
+                        config=proactive_config,
+                    )
+                }
+                trigger_reason = trigger_by_stage.get(stage_name)
+                if trigger_reason is None:
+                    continue
+
+                if stage_name == "decompose":
+                    before = {"actor_count": len(decompose_result.actor_cards)}
+                    if use_live_model:
+                        decompose_result = run_decompose(
+                            problem_text,
+                            model=model,
+                            api_key=api_key,
+                            prompt_patch=current_patch.decompose_patch,
+                            policy_version=policy_version,
+                        )
+                        trace_result = run_trace(
+                            decompose_result,
+                            trace_target=trace_target,
+                            model=model,
+                            api_key=api_key,
+                            prompt_patch=current_patch.trace_patch,
+                            policy_version=policy_version,
+                        )
+                        compete_result = run_compete(
+                            decompose_result,
+                            trace_result,
+                            model=model,
+                            api_key=api_key,
+                            prompt_patch=current_patch.compete_patch,
+                            policy_version=policy_version,
+                        )
+                        stress_result = run_stress(
+                            decompose_result,
+                            trace_result,
+                            compete_result,
+                            model=model,
+                            api_key=api_key,
+                            prompt_patch=current_patch.stress_patch,
+                            policy_version=policy_version,
+                        )
+                        final_report = run_final(
+                            decompose_result,
+                            trace_result,
+                            compete_result,
+                            stress_result,
+                            model=model,
+                            api_key=api_key,
+                            prompt_patch=current_patch.final_patch,
+                            policy_version=policy_version,
+                        )
+                    else:
+                        decompose_result = decompose_problem(problem_text)
+                        trace_result = build_trace(decompose_result, trace_target=trace_target)
+                        compete_result = build_competing_mechanisms(decompose_result, trace_result)
+                        stress_result = build_stress_test(decompose_result, trace_result, compete_result)
+                        final_report = build_final_report(
+                            decompose_result,
+                            trace_result,
+                            compete_result,
+                            stress_result,
+                        )
+                    after = {"actor_count": len(decompose_result.actor_cards)}
+                elif stage_name == "compete":
+                    before = {
+                        "predictions": [
+                            mechanism.prediction
+                            for mechanism in compete_result.competing_mechanisms
+                        ]
+                    }
+                    if use_live_model:
+                        compete_result = run_compete(
+                            decompose_result,
+                            trace_result,
+                            model=model,
+                            api_key=api_key,
+                            prompt_patch=current_patch.compete_patch,
+                            policy_version=policy_version,
+                        )
+                        stress_result = run_stress(
+                            decompose_result,
+                            trace_result,
+                            compete_result,
+                            model=model,
+                            api_key=api_key,
+                            prompt_patch=current_patch.stress_patch,
+                            policy_version=policy_version,
+                        )
+                        final_report = run_final(
+                            decompose_result,
+                            trace_result,
+                            compete_result,
+                            stress_result,
+                            model=model,
+                            api_key=api_key,
+                            prompt_patch=current_patch.final_patch,
+                            policy_version=policy_version,
+                        )
+                    else:
+                        compete_result = build_competing_mechanisms(decompose_result, trace_result)
+                        stress_result = build_stress_test(decompose_result, trace_result, compete_result)
+                        final_report = build_final_report(
+                            decompose_result,
+                            trace_result,
+                            compete_result,
+                            stress_result,
+                        )
+                    after = {
+                        "predictions": [
+                            mechanism.prediction for mechanism in compete_result.competing_mechanisms
+                        ]
+                    }
+                else:
+                    before = {"surprise_count": len(stress_result.surprise_ledger)}
+                    if use_live_model:
+                        stress_result = run_stress(
+                            decompose_result,
+                            trace_result,
+                            compete_result,
+                            model=model,
+                            api_key=api_key,
+                            prompt_patch=current_patch.stress_patch,
+                            policy_version=policy_version,
+                        )
+                        final_report = run_final(
+                            decompose_result,
+                            trace_result,
+                            compete_result,
+                            stress_result,
+                            model=model,
+                            api_key=api_key,
+                            prompt_patch=current_patch.final_patch,
+                            policy_version=policy_version,
+                        )
+                    else:
+                        stress_result = build_stress_test(decompose_result, trace_result, compete_result)
+                        final_report = build_final_report(
+                            decompose_result,
+                            trace_result,
+                            compete_result,
+                            stress_result,
+                        )
+                    after = {"surprise_count": len(stress_result.surprise_ledger)}
+
+                proactive_actions.append(
+                    ProactiveAction(
+                        trigger_reason=trigger_reason,
+                        rerun_stage=stage_name,
+                        before=before,
+                        after=after,
+                    ).to_dict()
+                )
+                decompose_payload = asdict(decompose_result)
+                trace_payload = asdict(trace_result)
+                compete_payload = asdict(compete_result)
+                stress_payload = asdict(stress_result)
+                final_payload = asdict(final_report)
+                evaluation = evaluate_phase1_artifacts(
+                    decompose_artifact=decompose_payload,
+                    trace_artifact=trace_payload,
+                    compete_artifact=compete_payload,
+                    stress_artifact=stress_payload,
+                    final_artifact=final_payload,
+                )
+                round_evaluations[-1] = evaluation
+
+        final_payload["proactive_actions"] = proactive_actions
+
         _save_round_json(round_dir, "01_decompose.json", decompose_payload)
         _save_round_json(round_dir, "02_trace.json", trace_payload)
         _save_round_json(round_dir, "03_compete.json", compete_payload)
@@ -592,6 +775,7 @@ def run_phase1_pipeline(
         stress_result=stress_result,
         final_report=final_report,
         round_evaluations=round_evaluations,
+        proactive_actions=proactive_actions,
         run_id=resolved_run_id,
         output_root=str(output_root),
     )

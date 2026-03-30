@@ -80,3 +80,24 @@ def test_run_phase1_pipeline_improve_rounds_writes_round_artifacts(tmp_path) -> 
     assert (base / "round_2" / "05_final.json").exists()
     assert len(artifacts.round_evaluations) == 2
     assert artifacts.run_id == "test-run"
+
+
+def test_run_phase1_pipeline_proactive_mode_records_actions_and_final_payload(tmp_path) -> None:
+    artifacts = run_phase1_pipeline(
+        "How would a shutdown at the main import terminal affect regional fuel supply and retail prices?",
+        run_id="test-proactive",
+        live_run_output_root=tmp_path,
+        proactive=True,
+        proactive_actor_threshold=999,
+    )
+
+    assert artifacts.proactive_actions
+    first_action = artifacts.proactive_actions[0]
+    assert first_action["trigger_reason"] == "actor_count<999"
+    assert first_action["rerun_stage"] == "decompose"
+
+    final_payload = json.loads(
+        (tmp_path / "test-proactive" / "round_1" / "05_final.json").read_text(encoding="utf-8")
+    )
+    assert "proactive_actions" in final_payload
+    assert final_payload["proactive_actions"][0]["rerun_stage"] == "decompose"
